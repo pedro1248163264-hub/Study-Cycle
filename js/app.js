@@ -16,23 +16,58 @@
 (function () {
   'use strict';
 
-  // ---------- INITIAL DATA (same as the prototype) ----------
-  const INITIAL_SUBJECTS = [
-    { id: '1', name: 'Math', difficulty: 3, content: 5, importance: 3, completedHours: 5, colorIndex: 0 },
-    { id: '2', name: 'Portuguese', difficulty: 2, content: 4, importance: 2, completedHours: 3, colorIndex: 1 },
-    { id: '3', name: 'Essay', difficulty: 5, content: 3, importance: 2, completedHours: 2, colorIndex: 4 },
-  ];
+  // ---------- INDEXEDDB PERSISTENCE ----------
+  const DB_NAME = 'StudyCycleDB';
+  const DB_VERSION = 1;
+  const STORE_NAME = 'app';
+  const STATE_KEY = 'appState';
 
+  function openDatabase() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = () => {
+        req.result.createObjectStore(STORE_NAME);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  function saveState(s) {
+    const data = {
+      subjects: s.subjects,
+      settings: s.settings,
+      isDark: s.isDark,
+    };
+    openDatabase().then(db => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).put(data, STATE_KEY);
+    }).catch(() => {});
+  }
+
+  function loadState() {
+    return openDatabase().then(db => {
+      return new Promise((resolve) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const req = tx.objectStore(STORE_NAME).get(STATE_KEY);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => resolve(null);
+      });
+    }).catch(() => null);
+  }
+
+  // ---------- INITIAL DATA ----------
+  const INITIAL_SUBJECTS = [];
   const INITIAL_SETTINGS = {
-    weeklyHours: 25,
-    minHoursPerSubject: 2,
+    weeklyHours: 0,
+    minHoursPerSubject: 1,
   };
 
-  // ---------- STATE (in-memory only, matches the original prototype) ----------
+  // ---------- STATE ----------
   const state = {
     subjects: JSON.parse(JSON.stringify(INITIAL_SUBJECTS)),
     settings: Object.assign({}, INITIAL_SETTINGS),
-    activeModal: null, // null | 'add-subject' | 'edit-subject' | 'settings' | 'log-time'
+    activeModal: null,
     editingSubjectId: null,
     isDark: false,
   };
@@ -154,8 +189,8 @@
       card.innerHTML = `
         <div class="sequence-empty">
           ${ICONS.checkCircle}
-          <p class="sequence-empty-title">Tudo em dia!</p>
-          <p class="sequence-empty-sub">Registre mais tempo ou reinicie o ciclo.</p>
+          <p class="sequence-empty-title">${d.allocatedSubjects.length === 0 ? 'Adicione matérias para começar' : 'Tudo em dia!'}</p>
+          <p class="sequence-empty-sub">${d.allocatedSubjects.length === 0 ? 'Defina suas matérias e configurações para gerar a sequência.' : 'Registre mais tempo ou reinicie o ciclo.'}</p>
         </div>`;
       return;
     }
@@ -193,6 +228,16 @@
 
   function renderSubjects(d) {
     const grid = document.getElementById('subjects-grid');
+
+    if (d.allocatedSubjects.length === 0) {
+      grid.innerHTML = `
+        <div class="empty-state">
+          <p class="empty-state-title">Nenhuma matéria adicionada</p>
+          <p class="empty-state-sub">Toque em "Adicionar matéria" para começar a organizar seus estudos.</p>
+        </div>`;
+      return;
+    }
+
     grid.innerHTML = d.allocatedSubjects.map(subj => {
       const pct = subj.allocated > 0 ? Math.min(100, (subj.completedHours / subj.allocated) * 100) : 0;
       return `
@@ -327,6 +372,7 @@
       if (subjectsCount * minHours > weekly) return;
       state.settings = { weeklyHours: weekly, minHoursPerSubject: minHours };
       state.activeModal = null;
+      saveState(state);
       render();
     });
   }
@@ -414,6 +460,7 @@
         }]);
       }
       state.activeModal = null;
+      saveState(state);
       render();
     });
 
@@ -422,6 +469,7 @@
       deleteBtn.addEventListener('click', () => {
         state.subjects = state.subjects.filter(s => s.id !== subject.id);
         state.activeModal = null;
+        saveState(state);
         render();
       });
     }
@@ -482,6 +530,7 @@
       if (!subjectId) return;
       state.subjects = state.subjects.map(s => s.id === subjectId ? Object.assign({}, s, { completedHours: s.completedHours + hours }) : s);
       state.activeModal = null;
+      saveState(state);
       render();
     });
   }
@@ -499,6 +548,7 @@
         break;
       case 'reset-cycle':
         state.subjects = state.subjects.map(s => Object.assign({}, s, { completedHours: 0 }));
+        saveState(state);
         render();
         break;
       case 'edit-subject':
@@ -535,6 +585,7 @@
     document.documentElement.classList.toggle('dark', state.isDark);
     document.querySelector('.icon-moon').style.display = state.isDark ? 'none' : '';
     document.querySelector('.icon-sun').style.display = state.isDark ? '' : 'none';
+    saveState(state);
   });
 
   // Close modal on Escape
@@ -546,7 +597,17 @@
   });
 
   // ---------- INIT ----------
-  render();
+  loadState().then(saved => {
+    if (saved) {
+      if (Array.isArray(saved.subjects)) state.subjects = saved.subjects;
+      if (saved.settings) state.settings = saved.settings;
+      if (typeof saved.isDark === 'boolean') state.isDark = saved.isDark;
+    }
+    document.documentElement.classList.toggle('dark', state.isDark);
+    document.querySelector('.icon-moon').style.display = state.isDark ? 'none' : '';
+    document.querySelector('.icon-sun').style.display = state.isDark ? '' : 'none';
+    render();
+  });
 
   // ---------- SERVICE WORKER (offline support + update check) ----------
   if ('serviceWorker' in navigator) {

@@ -449,6 +449,24 @@ select:focus-visible,
   margin-top: 0.125rem;
 }
 
+.empty-state {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--muted-foreground);
+}
+.empty-state .empty-state-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: var(--foreground);
+  margin: 0;
+}
+.empty-state .empty-state-sub {
+  font-size: 0.875rem;
+  margin-top: 0.25rem;
+}
+
 /* =========================
    SUBJECTS GRID
    ========================= */
