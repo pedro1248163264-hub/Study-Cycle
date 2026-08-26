@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Study Cycle</title>
+<meta name="description" content="Organize seus estudos em ciclos inteligentes.">
+<meta name="theme-color" content="#4F46E5">
+
+<link rel="icon" type="image/svg+xml" href="./icons/favicon.svg">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<link rel="manifest" href="./manifest.webmanifest">
+
+<!-- Web fonts: progressive enhancement only. The app works fully offline
+     with the system-font fallback defined in styles.css; if online, the
+     Service Worker will cache these for future offline use too. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="./css/styles.css">
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="header-inner">
+    <div class="header-brand">
+      <div class="brand-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-white"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+      </div>
+      <h1>Study Cycle</h1>
+    </div>
+    <div class="header-actions">
+      <button type="button" id="theme-toggle" class="icon-btn" aria-label="Alternar modo escuro">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-moon"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-sun" style="display:none"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+      </button>
+      <button type="button" id="settings-btn" class="icon-btn" aria-label="Configurações do ciclo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main class="container">
+
+  <!-- CYCLE OVERVIEW -->
+  <section class="card cycle-overview">
+    <div class="cycle-overview-inner">
+      <div class="cycle-info">
+        <h2 class="eyebrow">Ciclo desta semana</h2>
+        <div class="cycle-total">
+          <span class="cycle-total-num" id="total-completed">0</span>
+          <span class="cycle-total-label">/ <span id="total-weekly">0</span> h concluídas</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="overall-progress"></div>
+        </div>
+      </div>
+      <div class="cycle-actions" id="cycle-actions"></div>
+    </div>
+  </section>
+
+  <!-- SUGGESTED SEQUENCE -->
+  <section class="section" id="sequence-section">
+    <div class="section-header">
+      <h3>Sequência sugerida</h3>
+    </div>
+    <div class="card sequence-card" id="sequence-card"></div>
+  </section>
+
+  <!-- SUBJECTS -->
+  <section class="section">
+    <div class="section-header">
+      <h3>Suas matérias</h3>
+      <button type="button" id="add-subject-btn" class="btn btn-card-outline">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-sm"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+        Adicionar matéria
+      </button>
+    </div>
+    <div class="subjects-grid" id="subjects-grid"></div>
+  </section>
+
+</main>
+
+<!-- MODAL ROOT (populated by JS) -->
+<div id="modal-root"></div>
+
+<!-- UPDATE TOAST -->
+<div id="update-toast" class="update-toast" hidden>
+  <span>Nova versão disponível. Atualizando…</span>
+</div>
+
+<script src="./js/icons.js"></script>
+<script src="./js/app.js"></script>
+</body>
+</html>
