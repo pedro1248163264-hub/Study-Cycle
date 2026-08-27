@@ -110,9 +110,15 @@
     isDark: false,
 
     // --- Study Log: what am I currently studying, and where did I stop ---
-    studyLogs: [], // { id, name, category: 'Book'|'Video'|'Question', status: 'active'|'completed' }
+    // subject (optional) links a log to a Study Cycle subject by name, so
+    // clicking "Próxima matéria" can show only the material that belongs
+    // to it. Category-specific fields: Book -> chapter, page.
+    // Video -> episode, timestamp. Question -> exerciseNumber.
+    studyLogs: [], // { id, name, subject, category, status, ...category-specific fields }
     editingLogId: null,
     studyLogTab: 'active', // 'active' | 'completed'
+    prefillLogSubject: null, // pre-fills the subject when adding a log from the "next material" flow
+    nextMaterialSubject: null, // which subject's active logs the "next material" modal is showing
 
     // --- Error Log: what did I get wrong, and why ---
     errorLogs: [], // { id, subject, topic, description, errorType }
@@ -308,7 +314,7 @@
       <div class="sequence-content">
         <div class="next-study">
           <span class="next-study-label">Próxima matéria</span>
-          <div class="next-study-chip subject-color-${d.nextStudy.colorIndex}">
+          <div class="next-study-chip subject-color-${d.nextStudy.colorIndex}" data-action="show-next-material" data-subject="${esc(d.nextStudy.name)}" role="button" tabindex="0">
             ${ICONS.play}
             <div>
               <div class="next-study-name">${esc(d.nextStudy.name)}</div>
@@ -408,6 +414,12 @@
         : null;
       root.innerHTML = modalStudyLogHtml(log);
       wireStudyLogModal(log);
+      return;
+    }
+
+    if (state.activeModal === 'next-material') {
+      root.innerHTML = modalNextMaterialHtml(state.nextMaterialSubject);
+      wireNextMaterialModal();
       return;
     }
 
@@ -664,6 +676,27 @@
     return ICONS.helpCircle;
   }
 
+  // One-line summary of the category-specific position fields, e.g.
+  // "Capítulo 4 · Página 143" or "EP 12 · 12:34" or "Exercício 27".
+  function logDetailLine(log) {
+    if (log.category === 'Book') {
+      const parts = [];
+      if (log.chapter) parts.push(log.chapter);
+      if (log.page) parts.push(`Página ${log.page}`);
+      return parts.join(' · ');
+    }
+    if (log.category === 'Video') {
+      const parts = [];
+      if (log.episode) parts.push(`EP ${log.episode}`);
+      if (log.timestamp) parts.push(log.timestamp);
+      return parts.join(' · ');
+    }
+    if (log.category === 'Question') {
+      return log.exerciseNumber ? `Exercício ${log.exerciseNumber}` : '';
+    }
+    return '';
+  }
+
   function renderStudyLogScreen() {
     const container = document.getElementById('screen-study-log');
     const activeLogs = state.studyLogs.filter(l => l.status === 'active');
@@ -688,14 +721,18 @@
           <p>Materiais marcados como concluídos aparecem aqui.</p>
         </div>`;
     } else {
-      listHtml = `<div class="list-cards">` + shown.map(log => `
+      listHtml = `<div class="list-cards">` + shown.map(log => {
+        const detail = logDetailLine(log);
+        return `
         <div class="log-card${log.status === 'completed' ? ' is-completed' : ''}">
           <div class="log-card-main">
             <div class="log-card-meta">
               <span class="log-card-category">${categoryIcon(log.category)}${esc(STUDY_CATEGORY_LABELS[log.category] || log.category)}</span>
+              ${log.subject ? `<span class="log-card-subject">${esc(log.subject)}</span>` : ''}
               ${log.status === 'completed' ? `<span class="pill-completed">${ICONS.check}Concluído</span>` : ''}
             </div>
             <p class="log-card-name">${esc(log.name)}</p>
+            ${detail ? `<p class="log-card-detail">${esc(detail)}</p>` : ''}
           </div>
           <div class="log-card-actions">
             <button type="button" class="btn-chip" data-action="edit-log" data-id="${log.id}">${ICONS.edit.replace('class="icon"', 'class="icon icon-sm"')}Editar</button>
@@ -703,7 +740,8 @@
               ? `<button type="button" class="btn-chip btn-chip-success" data-action="complete-log" data-id="${log.id}">${ICONS.check}Concluir</button>`
               : `<button type="button" class="btn-chip" data-action="reactivate-log" data-id="${log.id}">${ICONS.rotateCcw.replace('class="icon"', 'class="icon icon-sm"')}Reativar</button>`}
           </div>
-        </div>`).join('') + `</div>`;
+        </div>`;
+      }).join('') + `</div>`;
     }
 
     container.innerHTML = `
@@ -733,11 +771,22 @@
   function modalStudyLogHtml(log) {
     const name = log ? log.name : '';
     const category = log ? log.category : 'Book';
+    const subject = log ? (log.subject || '') : (state.prefillLogSubject || '');
+    const chapter = log ? (log.chapter || '') : '';
+    const page = log ? (log.page || '') : '';
+    const episode = log ? (log.episode || '') : '';
+    const timestamp = log ? (log.timestamp || '') : '';
+    const exerciseNumber = log ? (log.exerciseNumber || '') : '';
+
     const categoryButtons = STUDY_CATEGORIES.map(cat => `
       <button type="button" class="category-option${cat === category ? ' active' : ''}" data-category="${cat}">
         ${categoryIcon(cat)}
         ${esc(STUDY_CATEGORY_LABELS[cat])}
       </button>`).join('');
+
+    const subjectOptionsHtml = state.subjects.map(s =>
+      `<option value="${esc(s.name)}"${subject === s.name ? ' selected' : ''}>${esc(s.name)}</option>`
+    ).join('');
 
     const body = `
       <div id="study-log-form">
@@ -746,9 +795,43 @@
           <input id="input-log-name" class="text-input font-medium" type="text" placeholder="ex: Análise Matemática — Módulo 2, Aula 17" value="${esc(name)}">
         </div>
         <div class="field">
+          <label for="input-log-subject">Matéria (opcional)</label>
+          <div class="select-wrap">
+            <select id="input-log-subject" class="select-input">
+              <option value=""${subject === '' ? ' selected' : ''}>Nenhuma / Geral</option>
+              ${subjectOptionsHtml}
+            </select>
+            <span class="select-chevron">${ICONS.chevronDown}</span>
+          </div>
+        </div>
+        <div class="field">
           <label>Categoria</label>
           <div class="category-picker" id="category-picker">${categoryButtons}</div>
         </div>
+
+        <div class="field category-fields" data-for-category="Book" style="${category === 'Book' ? '' : 'display:none'}">
+          <label for="input-log-chapter">Capítulo</label>
+          <input id="input-log-chapter" class="text-input" type="text" placeholder="ex: Capítulo 4 — Derivadas" value="${esc(chapter)}">
+          <div class="subfield">
+            <label for="input-log-page">Página</label>
+            <input id="input-log-page" class="text-input" type="text" placeholder="ex: 143" value="${esc(page)}">
+          </div>
+        </div>
+
+        <div class="field category-fields" data-for-category="Video" style="${category === 'Video' ? '' : 'display:none'}">
+          <label for="input-log-episode">Episódio</label>
+          <input id="input-log-episode" class="text-input" type="text" placeholder="ex: 12" value="${esc(episode)}">
+          <div class="subfield">
+            <label for="input-log-timestamp">Tempo (min:seg)</label>
+            <input id="input-log-timestamp" class="text-input" type="text" placeholder="ex: 12:34" value="${esc(timestamp)}">
+          </div>
+        </div>
+
+        <div class="field category-fields" data-for-category="Question" style="${category === 'Question' ? '' : 'display:none'}">
+          <label for="input-log-exercise">Exercício</label>
+          <input id="input-log-exercise" class="text-input" type="text" placeholder="ex: 27" value="${esc(exerciseNumber)}">
+        </div>
+
         <div class="modal-form-actions">
           <button type="button" class="btn-secondary-block" data-action="close-modal">Cancelar</button>
           <button type="button" class="btn-save-flex" id="log-save-btn" disabled>${log ? 'Salvar' : 'Adicionar'}</button>
@@ -760,11 +843,18 @@
   function wireStudyLogModal(log) {
     let category = log ? log.category : 'Book';
     const nameInput = document.getElementById('input-log-name');
+    const subjectSelect = document.getElementById('input-log-subject');
     const saveBtn = document.getElementById('log-save-btn');
 
     function refresh() { saveBtn.disabled = nameInput.value.trim().length === 0; }
     nameInput.addEventListener('input', refresh);
     refresh();
+
+    function showCategoryFields() {
+      document.querySelectorAll('.category-fields').forEach(el => {
+        el.style.display = el.getAttribute('data-for-category') === category ? '' : 'none';
+      });
+    }
 
     document.querySelectorAll('#category-picker .category-option').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -772,22 +862,86 @@
         document.querySelectorAll('#category-picker .category-option').forEach(b => {
           b.classList.toggle('active', b.getAttribute('data-category') === category);
         });
+        showCategoryFields();
       });
     });
 
     saveBtn.addEventListener('click', () => {
       const name = nameInput.value.trim();
       if (!name) return;
+      const subject = subjectSelect.value;
+
+      const extra = {};
+      if (category === 'Book') {
+        extra.chapter = (document.getElementById('input-log-chapter').value || '').trim();
+        extra.page = (document.getElementById('input-log-page').value || '').trim();
+      } else if (category === 'Video') {
+        extra.episode = (document.getElementById('input-log-episode').value || '').trim();
+        extra.timestamp = (document.getElementById('input-log-timestamp').value || '').trim();
+      } else if (category === 'Question') {
+        extra.exerciseNumber = (document.getElementById('input-log-exercise').value || '').trim();
+      }
+
       if (log) {
-        state.studyLogs = state.studyLogs.map(l => l.id === log.id ? Object.assign({}, l, { name, category }) : l);
+        const cleaned = Object.assign({}, log);
+        delete cleaned.chapter; delete cleaned.page; delete cleaned.episode; delete cleaned.timestamp; delete cleaned.exerciseNumber;
+        state.studyLogs = state.studyLogs.map(l => l.id === log.id
+          ? Object.assign(cleaned, { name, subject, category }, extra)
+          : l);
       } else {
-        state.studyLogs = state.studyLogs.concat([{ id: uid(), name, category, status: 'active' }]);
+        state.studyLogs = state.studyLogs.concat([Object.assign({ id: uid(), name, subject, category, status: 'active' }, extra)]);
       }
       state.editingLogId = null;
+      state.prefillLogSubject = null;
       state.activeModal = null;
       saveState(state);
       render();
     });
+  }
+
+  // Modal opened when the user clicks the "Próxima matéria" card on the
+  // Study Cycle screen. Shows only the ACTIVE Study Log entries linked to
+  // that subject — the Study Cycle still only decides the subject; this
+  // just answers "what specifically should I study within it?".
+  function modalNextMaterialHtml(subjectName) {
+    const logs = state.studyLogs.filter(l => l.status === 'active' && l.subject === subjectName);
+
+    let body;
+    if (logs.length === 0) {
+      body = `
+        <div class="empty-state-block" style="padding:2rem 1rem;">
+          ${ICONS.bookMarked}
+          <h3>Nenhum material ativo</h3>
+          <p>Não há registros de Study Log ativos para ${esc(subjectName)}.</p>
+          <button type="button" class="btn btn-primary" data-action="add-log-for-subject" data-subject="${esc(subjectName)}">
+            ${ICONS.plus.replace('class="icon"', 'class="icon icon-sm"')} Adicionar registro
+          </button>
+        </div>`;
+    } else {
+      body = `<div class="list-cards">` + logs.map(log => {
+        const detail = logDetailLine(log);
+        return `
+        <div class="log-card">
+          <div class="log-card-main">
+            <div class="log-card-meta">
+              <span class="log-card-category">${categoryIcon(log.category)}${esc(STUDY_CATEGORY_LABELS[log.category] || log.category)}</span>
+            </div>
+            <p class="log-card-name">${esc(log.name)}</p>
+            ${detail ? `<p class="log-card-detail">${esc(detail)}</p>` : ''}
+          </div>
+          <div class="log-card-actions">
+            <button type="button" class="btn-chip btn-chip-success" data-action="continue-log" data-id="${log.id}">Continuar</button>
+          </div>
+        </div>`;
+      }).join('') + `</div>`;
+    }
+
+    return modalShell(subjectName, body);
+  }
+
+  function wireNextMaterialModal() {
+    // static content, no extra JS wiring needed beyond the global
+    // data-action delegation (continue-log / add-log-for-subject)
   }
 
   // ==========================================================
@@ -1046,6 +1200,24 @@
         state.studyLogTab = target.getAttribute('data-tab');
         render();
         break;
+      case 'show-next-material':
+        state.nextMaterialSubject = target.getAttribute('data-subject');
+        state.activeModal = 'next-material';
+        render();
+        break;
+      case 'continue-log':
+        // "Continuar" opens the log for editing, so the user can update
+        // where they stopped (chapter/page, episode/timestamp, exercise).
+        state.editingLogId = target.getAttribute('data-id');
+        state.activeModal = 'edit-log';
+        render();
+        break;
+      case 'add-log-for-subject':
+        state.editingLogId = null;
+        state.prefillLogSubject = target.getAttribute('data-subject');
+        state.activeModal = 'add-log';
+        render();
+        break;
 
       // --- Error Log ---
       case 'add-error':
@@ -1095,6 +1267,14 @@
     if (e.key === 'Escape' && state.activeModal) {
       state.activeModal = null;
       render();
+      return;
+    }
+    // Keyboard activation for non-native buttons (e.g. the clickable
+    // "next study" chip, which is a div so its visual design stays
+    // untouched) — Enter/Space don't auto-fire click on those.
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role="button"][data-action]')) {
+      e.preventDefault();
+      e.target.click();
     }
   });
 

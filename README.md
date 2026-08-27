@@ -62,7 +62,10 @@ CHANGELOG.md              → histórico do que foi mudado e por quê
 
 ### Study Log
 - Cada registro tem nome, categoria (Livro/Vídeo/Questões) e status (ativo/concluído). Novo registro sempre começa ativo.
+- Cada categoria tem campos próprios de posição: Livro → capítulo e página; Vídeo → episódio e tempo (min:seg); Questões → número do exercício.
+- Pode opcionalmente ser vinculado a uma matéria do Study Cycle. Isso é só uma referência (pelo nome) — não altera nada na alocação ou sequência do Study Cycle.
 - Marcar como concluído não apaga o registro — ele só passa a aparecer na aba "Concluídos" (e pode ser reativado a qualquer momento).
+- Clicar no card "Próxima matéria" do Study Cycle abre um modal mostrando só os registros ativos vinculados àquela matéria (ou um atalho para criar um, se não houver nenhum). O Study Cycle continua decidindo só a matéria; o Study Log informa o material específico.
 
 ### Error Log
 - Cada erro tem matéria, tópico, descrição e tipo de erro (uma lista fixa de 7 opções).

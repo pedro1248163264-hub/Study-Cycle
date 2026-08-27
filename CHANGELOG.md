@@ -2,6 +2,32 @@
 
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
+## [v4] — Campos por categoria no Study Log + seleção de material ao clicar em "Próxima matéria"
+
+### Adicionado
+- **Study Log agora tem campos específicos por categoria**, além de nome e status:
+  - **Livro**: Capítulo + Página.
+  - **Vídeo**: Episódio + Tempo (min:seg).
+  - **Questões**: Número do exercício.
+  - Os campos trocam dinamicamente ao alternar a categoria no formulário (o Study Log ainda guarda só os campos da categoria atualmente selecionada — trocar de categoria antes de salvar descarta os campos da categoria anterior).
+- **Vínculo opcional com uma matéria do Study Cycle** (`subject`), adicionado ao Study Log especificamente para viabilizar o item abaixo. É só uma referência pelo nome da matéria (mesmo padrão já usado no Error Log) — continua não existindo nenhum vínculo funcional (nada no Study Log altera a alocação ou a sequência do Study Cycle).
+- **Clique em "Próxima matéria" agora abre um modal com os materiais ativos daquela matéria** (filtrados pelo campo `subject` acima):
+  - O card "Próxima matéria" no Study Cycle continua com a aparência visual idêntica — só ganhou `cursor: pointer` e um contorno de foco para teclado. Nada muda automaticamente antes do clique.
+  - Se não houver Study Log ativo para a matéria, mostra estado vazio com atalho para adicionar um já com a matéria pré-selecionada.
+  - Se houver um ou mais, lista todos (categoria, nome, e os campos específicos — capítulo/página bem visíveis para livros).
+  - O botão "Continuar" em cada item abre o Study Log em modo de edição, para o usuário atualizar onde parou.
+  - O Study Cycle continua decidindo **apenas a matéria** (a lógica de sequência/alocação não foi tocada); o Study Log é quem informa o material específico dentro dela.
+
+### Não alterado
+- Toda a lógica do Study Cycle (alocação, arredondamento, mínimo, desempate por recência, progresso, reset).
+- Error Log (nenhuma mudança).
+- Visual/layout existente — a única adição visual é o cursor de "clicável" no card de próxima matéria.
+
+### Arquivos alterados
+`js/app.js`, `css/styles.css` (pequenas adições: `.subfield`, `.log-card-subject`, `.log-card-detail`, cursor no `.next-study-chip`), `sw.js` (v3 → v4).
+
+---
+
 ## [v3] — Study Log, Error Log e correção de empate na sequência
 
 **Contexto:** o app já vinha funcionando com persistência via IndexedDB e dados iniciais vazios (mudanças feitas fora do chat, entre sessões). O Figma foi atualizado com duas telas novas (Study Log e Error Log) mas esse export do Figma ainda usava a versão antiga do algoritmo de alocação e não tinha persistência — ele não "sabia" das mudanças feitas no app funcionando. Este update usa o app funcionando como base (preserva tudo) e só enxerta o visual + lógica novos por cima.

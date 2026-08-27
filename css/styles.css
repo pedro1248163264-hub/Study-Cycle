@@ -387,7 +387,9 @@ select:focus-visible,
   align-items: center;
   gap: 0.75rem;
   width: 100%;
+  cursor: pointer;
 }
+.next-study-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .next-study-chip .icon { width: 1.25rem; height: 1.25rem; }
 .next-study-name { font-weight: 700; }
 .next-study-duration { font-size: 0.875rem; opacity: 0.8; }
@@ -1062,6 +1064,30 @@ html.dark .pill-completed { color: #34D399; background-color: rgba(6, 78, 59, 0.
 .log-card.is-completed .log-card-name {
   text-decoration: line-through;
   color: var(--muted-foreground);
+}
+
+.log-card-subject {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  background-color: var(--muted);
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--radius-full);
+}
+
+.log-card-detail {
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+  margin-top: 0.25rem;
+}
+
+/* Category-specific fields inside the Study Log modal (Book/Video/Question) */
+.field .subfield { margin-top: 0.75rem; }
+.field .subfield label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
 }
 
 .log-card-actions {
