@@ -37,6 +37,9 @@
     const data = {
       subjects: s.subjects,
       settings: s.settings,
+      studyCounter: s.studyCounter,
+      studyLogs: s.studyLogs,
+      errorLogs: s.errorLogs,
       isDark: s.isDark,
     };
     openDatabase().then(db => {
@@ -63,13 +66,62 @@
     minHoursPerSubject: 1,
   };
 
+  const STUDY_CATEGORIES = ['Book', 'Video', 'Question'];
+  const STUDY_CATEGORY_LABELS = { Book: 'Livro', Video: 'Vídeo', Question: 'Questões' };
+
+  const ERROR_TYPES = [
+    'Knowledge gap',
+    'Attention / careless mistake',
+    'Time management',
+    'Calculation',
+    'Misunderstood question',
+    'Forgot concept',
+    'Other',
+  ];
+  const ERROR_TYPE_LABELS = {
+    'Knowledge gap': 'Lacuna de conhecimento',
+    'Attention / careless mistake': 'Desatenção / descuido',
+    'Time management': 'Gestão de tempo',
+    'Calculation': 'Erro de cálculo',
+    'Misunderstood question': 'Interpretação errada',
+    'Forgot concept': 'Esqueci o conceito',
+    'Other': 'Outro',
+  };
+  const ERROR_TYPE_BADGE = {
+    'Knowledge gap': 'error-badge-violet',
+    'Attention / careless mistake': 'error-badge-amber',
+    'Time management': 'error-badge-blue',
+    'Calculation': 'error-badge-rose',
+    'Misunderstood question': 'error-badge-orange',
+    'Forgot concept': 'error-badge-fuchsia',
+    'Other': 'error-badge-neutral',
+  };
+
   // ---------- STATE ----------
   const state = {
     subjects: JSON.parse(JSON.stringify(INITIAL_SUBJECTS)),
     settings: Object.assign({}, INITIAL_SETTINGS),
+    // Bumped every time the user logs time for a subject. Each subject
+    // remembers the counter value from its most recent log, so ties in
+    // "hours remaining" can be broken by real recency (see generateSequence).
+    studyCounter: 0,
     activeModal: null,
     editingSubjectId: null,
     isDark: false,
+
+    // --- Study Log: what am I currently studying, and where did I stop ---
+    studyLogs: [], // { id, name, category: 'Book'|'Video'|'Question', status: 'active'|'completed' }
+    editingLogId: null,
+    studyLogTab: 'active', // 'active' | 'completed'
+
+    // --- Error Log: what did I get wrong, and why ---
+    errorLogs: [], // { id, subject, topic, description, errorType }
+    editingErrorId: null,
+    errorFilterSubject: '',
+    errorFilterType: '',
+
+    // --- Navigation (Study Cycle is untouched; these are additive screens) ---
+    screen: 'dashboard', // 'dashboard' | 'study-log' | 'error-log'
   };
 
   // ---------- HELPERS ----------
@@ -93,6 +145,12 @@
     });
   }
 
+  // Builds the suggested study order: always the subject with the most
+  // hours left, never the same subject twice in a row (unless it's the
+  // only one with hours left). When two or more subjects are tied on
+  // hours remaining, the one that has gone longest without being
+  // studied in real life wins the tie — not just whichever happens to
+  // be first in the list.
   function generateSequence(allocatedSubjects) {
     const sequence = [];
     const pools = allocatedSubjects.map(s => ({
@@ -100,12 +158,22 @@
       name: s.name,
       colorIndex: s.colorIndex,
       remaining: Math.max(0, s.allocated - s.completedHours),
+      // Higher = studied more recently in real life. 0 = never studied,
+      // which makes it win any tie (most "overdue").
+      recency: s.lastStudiedAt || 0,
     }));
 
     let lastPickedId = null;
+    // Local clock for this simulated run: once a subject is picked here,
+    // it's treated as "just studied" for tie-breaking the rest of this
+    // same sequence, without touching the subject's real recency data.
+    let simClock = pools.reduce((max, p) => Math.max(max, p.recency), 0);
 
     while (pools.some(p => p.remaining > 0)) {
-      pools.sort((a, b) => b.remaining - a.remaining);
+      pools.sort((a, b) => {
+        if (b.remaining !== a.remaining) return b.remaining - a.remaining;
+        return a.recency - b.recency; // tie: longest-waiting subject goes first
+      });
 
       let candidate = pools.find(p => p.id !== lastPickedId && p.remaining > 0);
       if (!candidate) {
@@ -115,6 +183,8 @@
       if (candidate) {
         sequence.push({ id: candidate.id, name: candidate.name, colorIndex: candidate.colorIndex });
         candidate.remaining -= 1;
+        simClock += 1;
+        candidate.recency = simClock;
         lastPickedId = candidate.id;
       }
     }
@@ -148,10 +218,37 @@
   // ---------- RENDER ----------
   function render() {
     const d = getDerived();
-    renderCycleOverview(d);
-    renderSequence(d);
-    renderSubjects(d);
+    renderNav();
+
+    document.getElementById('screen-dashboard').style.display = state.screen === 'dashboard' ? '' : 'none';
+    document.getElementById('screen-study-log').style.display = state.screen === 'study-log' ? '' : 'none';
+    document.getElementById('screen-error-log').style.display = state.screen === 'error-log' ? '' : 'none';
+
+    if (state.screen === 'dashboard') {
+      // --- Study Cycle: existing, finished feature — logic untouched ---
+      renderCycleOverview(d);
+      renderSequence(d);
+      renderSubjects(d);
+    } else if (state.screen === 'study-log') {
+      renderStudyLogScreen();
+    } else if (state.screen === 'error-log') {
+      renderErrorLogScreen();
+    }
+
     renderModal(d);
+  }
+
+  function renderNav() {
+    const NAV_ITEMS = [
+      { key: 'dashboard', label: 'Study Cycle', icon: ICONS.layoutDashboard },
+      { key: 'study-log', label: 'Study Log', icon: ICONS.bookMarked },
+      { key: 'error-log', label: 'Error Log', icon: ICONS.alertTriangle },
+    ];
+    document.getElementById('nav-tabs').innerHTML = NAV_ITEMS.map(item => `
+      <button type="button" class="nav-tab${state.screen === item.key ? ' active' : ''}" data-action="switch-screen" data-screen="${item.key}">
+        ${item.icon}
+        ${esc(item.label)}
+      </button>`).join('');
   }
 
   function renderCycleOverview(d) {
@@ -302,6 +399,24 @@
     if (state.activeModal === 'log-time') {
       root.innerHTML = modalLogTimeHtml(d);
       wireLogTimeModal(d);
+      return;
+    }
+
+    if (state.activeModal === 'add-log' || state.activeModal === 'edit-log') {
+      const log = state.activeModal === 'edit-log'
+        ? state.studyLogs.find(l => l.id === state.editingLogId)
+        : null;
+      root.innerHTML = modalStudyLogHtml(log);
+      wireStudyLogModal(log);
+      return;
+    }
+
+    if (state.activeModal === 'add-error' || state.activeModal === 'edit-error') {
+      const err = state.activeModal === 'edit-error'
+        ? state.errorLogs.find(e => e.id === state.editingErrorId)
+        : null;
+      root.innerHTML = modalErrorHtml(err);
+      wireErrorModal(err);
       return;
     }
   }
@@ -457,6 +572,7 @@
           importance: ratings.importance,
           completedHours: 0,
           colorIndex: state.subjects.length % 8,
+          lastStudiedAt: 0,
         }]);
       }
       state.activeModal = null;
@@ -528,7 +644,339 @@
     submitBtn.addEventListener('click', () => {
       const subjectId = select.value;
       if (!subjectId) return;
-      state.subjects = state.subjects.map(s => s.id === subjectId ? Object.assign({}, s, { completedHours: s.completedHours + hours }) : s);
+      state.studyCounter += 1;
+      const stamp = state.studyCounter;
+      state.subjects = state.subjects.map(s => s.id === subjectId
+        ? Object.assign({}, s, { completedHours: s.completedHours + hours, lastStudiedAt: stamp })
+        : s);
+      state.activeModal = null;
+      saveState(state);
+      render();
+    });
+  }
+
+  // ==========================================================
+  // STUDY LOG — "what am I currently studying, and where did I stop?"
+  // ==========================================================
+  function categoryIcon(category) {
+    if (category === 'Book') return ICONS.bookOpen;
+    if (category === 'Video') return ICONS.video;
+    return ICONS.helpCircle;
+  }
+
+  function renderStudyLogScreen() {
+    const container = document.getElementById('screen-study-log');
+    const activeLogs = state.studyLogs.filter(l => l.status === 'active');
+    const completedLogs = state.studyLogs.filter(l => l.status === 'completed');
+    const shown = state.studyLogTab === 'active' ? activeLogs : completedLogs;
+
+    let listHtml;
+    if (shown.length === 0) {
+      listHtml = state.studyLogTab === 'active' ? `
+        <div class="empty-state-block">
+          ${ICONS.bookMarked}
+          <h3>Nenhum registro ativo</h3>
+          <p>Comece a acompanhar o que você está estudando agora.</p>
+          <button type="button" class="btn btn-primary" data-action="add-log">
+            ${ICONS.plus.replace('class="icon"', 'class="icon icon-sm"')}
+            Adicionar registro
+          </button>
+        </div>` : `
+        <div class="empty-state-block">
+          ${ICONS.bookMarked}
+          <h3>Nenhum registro concluído</h3>
+          <p>Materiais marcados como concluídos aparecem aqui.</p>
+        </div>`;
+    } else {
+      listHtml = `<div class="list-cards">` + shown.map(log => `
+        <div class="log-card${log.status === 'completed' ? ' is-completed' : ''}">
+          <div class="log-card-main">
+            <div class="log-card-meta">
+              <span class="log-card-category">${categoryIcon(log.category)}${esc(STUDY_CATEGORY_LABELS[log.category] || log.category)}</span>
+              ${log.status === 'completed' ? `<span class="pill-completed">${ICONS.check}Concluído</span>` : ''}
+            </div>
+            <p class="log-card-name">${esc(log.name)}</p>
+          </div>
+          <div class="log-card-actions">
+            <button type="button" class="btn-chip" data-action="edit-log" data-id="${log.id}">${ICONS.edit.replace('class="icon"', 'class="icon icon-sm"')}Editar</button>
+            ${log.status === 'active'
+              ? `<button type="button" class="btn-chip btn-chip-success" data-action="complete-log" data-id="${log.id}">${ICONS.check}Concluir</button>`
+              : `<button type="button" class="btn-chip" data-action="reactivate-log" data-id="${log.id}">${ICONS.rotateCcw.replace('class="icon"', 'class="icon icon-sm"')}Reativar</button>`}
+          </div>
+        </div>`).join('') + `</div>`;
+    }
+
+    container.innerHTML = `
+      <div class="screen">
+        <div class="screen-header">
+          <div>
+            <h2>Study Log</h2>
+            <p>Acompanhe o que você está estudando e onde parou.</p>
+          </div>
+          <button type="button" class="btn btn-primary" data-action="add-log">
+            ${ICONS.plus.replace('class="icon"', 'class="icon icon-sm"')}
+            Adicionar registro
+          </button>
+        </div>
+        <div class="sub-tabs">
+          <button type="button" class="sub-tab${state.studyLogTab === 'active' ? ' active' : ''}" data-action="switch-log-tab" data-tab="active">
+            Ativos <span class="sub-tab-count">${activeLogs.length}</span>
+          </button>
+          <button type="button" class="sub-tab${state.studyLogTab === 'completed' ? ' active' : ''}" data-action="switch-log-tab" data-tab="completed">
+            Concluídos <span class="sub-tab-count">${completedLogs.length}</span>
+          </button>
+        </div>
+        ${listHtml}
+      </div>`;
+  }
+
+  function modalStudyLogHtml(log) {
+    const name = log ? log.name : '';
+    const category = log ? log.category : 'Book';
+    const categoryButtons = STUDY_CATEGORIES.map(cat => `
+      <button type="button" class="category-option${cat === category ? ' active' : ''}" data-category="${cat}">
+        ${categoryIcon(cat)}
+        ${esc(STUDY_CATEGORY_LABELS[cat])}
+      </button>`).join('');
+
+    const body = `
+      <div id="study-log-form">
+        <div class="field">
+          <label for="input-log-name">Nome</label>
+          <input id="input-log-name" class="text-input font-medium" type="text" placeholder="ex: Análise Matemática — Módulo 2, Aula 17" value="${esc(name)}">
+        </div>
+        <div class="field">
+          <label>Categoria</label>
+          <div class="category-picker" id="category-picker">${categoryButtons}</div>
+        </div>
+        <div class="modal-form-actions">
+          <button type="button" class="btn-secondary-block" data-action="close-modal">Cancelar</button>
+          <button type="button" class="btn-save-flex" id="log-save-btn" disabled>${log ? 'Salvar' : 'Adicionar'}</button>
+        </div>
+      </div>`;
+    return modalShell(log ? 'Editar registro' : 'Adicionar registro', body);
+  }
+
+  function wireStudyLogModal(log) {
+    let category = log ? log.category : 'Book';
+    const nameInput = document.getElementById('input-log-name');
+    const saveBtn = document.getElementById('log-save-btn');
+
+    function refresh() { saveBtn.disabled = nameInput.value.trim().length === 0; }
+    nameInput.addEventListener('input', refresh);
+    refresh();
+
+    document.querySelectorAll('#category-picker .category-option').forEach(btn => {
+      btn.addEventListener('click', () => {
+        category = btn.getAttribute('data-category');
+        document.querySelectorAll('#category-picker .category-option').forEach(b => {
+          b.classList.toggle('active', b.getAttribute('data-category') === category);
+        });
+      });
+    });
+
+    saveBtn.addEventListener('click', () => {
+      const name = nameInput.value.trim();
+      if (!name) return;
+      if (log) {
+        state.studyLogs = state.studyLogs.map(l => l.id === log.id ? Object.assign({}, l, { name, category }) : l);
+      } else {
+        state.studyLogs = state.studyLogs.concat([{ id: uid(), name, category, status: 'active' }]);
+      }
+      state.editingLogId = null;
+      state.activeModal = null;
+      saveState(state);
+      render();
+    });
+  }
+
+  // ==========================================================
+  // ERROR LOG — "what did I get wrong, and why?"
+  // ==========================================================
+  function renderErrorLogScreen() {
+    const container = document.getElementById('screen-error-log');
+    const subjectNames = state.subjects.map(s => s.name);
+    const filterSubjectOptions = Array.from(new Set(subjectNames.concat(state.errorLogs.map(e => e.subject)))).sort((a, b) => a.localeCompare(b));
+
+    const filtered = state.errorLogs.filter(e => {
+      if (state.errorFilterSubject && e.subject !== state.errorFilterSubject) return false;
+      if (state.errorFilterType && e.errorType !== state.errorFilterType) return false;
+      return true;
+    });
+
+    let filterBarHtml = '';
+    if (state.errorLogs.length > 0) {
+      const subjectOptionsHtml = filterSubjectOptions.map(s => `<option value="${esc(s)}"${state.errorFilterSubject === s ? ' selected' : ''}>${esc(s)}</option>`).join('');
+      const typeOptionsHtml = ERROR_TYPES.map(t => `<option value="${esc(t)}"${state.errorFilterType === t ? ' selected' : ''}>${esc(ERROR_TYPE_LABELS[t])}</option>`).join('');
+      filterBarHtml = `
+        <div class="filter-bar">
+          <span class="filter-label">${ICONS.filter}Filtrar:</span>
+          <div class="filter-select-wrap">
+            <select id="error-filter-subject" class="filter-select">
+              <option value="">Todas as matérias</option>
+              ${subjectOptionsHtml}
+            </select>
+            ${ICONS.chevronDown}
+          </div>
+          <div class="filter-select-wrap">
+            <select id="error-filter-type" class="filter-select">
+              <option value="">Todos os tipos</option>
+              ${typeOptionsHtml}
+            </select>
+            ${ICONS.chevronDown}
+          </div>
+          ${(state.errorFilterSubject || state.errorFilterType) ? `
+            <button type="button" class="filter-clear" data-action="clear-error-filters">${ICONS.x}Limpar</button>
+            <span class="filter-result-count">${filtered.length} ${filtered.length === 1 ? 'resultado' : 'resultados'}</span>` : ''}
+        </div>`;
+    }
+
+    let listHtml;
+    if (state.errorLogs.length === 0) {
+      listHtml = `
+        <div class="empty-state-block">
+          ${ICONS.alertTriangle}
+          <h3>Nenhum erro registrado</h3>
+          <p>Registre seus erros ao estudar para identificar padrões e fechar lacunas.</p>
+          <button type="button" class="btn btn-primary" data-action="add-error">
+            ${ICONS.plus.replace('class="icon"', 'class="icon icon-sm"')}
+            Registrar erro
+          </button>
+        </div>`;
+    } else if (filtered.length === 0) {
+      listHtml = `
+        <div class="empty-state-block">
+          ${ICONS.filter}
+          <h3>Nenhum erro corresponde aos filtros</h3>
+          <p>Tente ajustar ou limpar os filtros.</p>
+        </div>`;
+    } else {
+      listHtml = `<div class="list-cards">` + filtered.map(err => `
+        <div class="log-card error-card">
+          <div class="error-card-body">
+            <div class="error-card-title">
+              <span class="error-card-subject">${esc(err.subject)}</span>
+              <span class="error-card-sep">&middot;</span>
+              <span class="error-card-topic">${esc(err.topic)}</span>
+            </div>
+            <p class="error-card-desc">&ldquo;${esc(err.description)}&rdquo;</p>
+            <div><span class="error-badge ${ERROR_TYPE_BADGE[err.errorType] || 'error-badge-neutral'}">${esc(ERROR_TYPE_LABELS[err.errorType] || err.errorType)}</span></div>
+          </div>
+          <div class="log-card-actions">
+            <button type="button" class="btn-chip" data-action="edit-error" data-id="${err.id}">${ICONS.edit.replace('class="icon"', 'class="icon icon-sm"')}Editar</button>
+            <button type="button" class="btn-chip btn-chip-danger" data-action="delete-error" data-id="${err.id}">${ICONS.trash.replace('class="icon"', 'class="icon icon-sm"')}Excluir</button>
+          </div>
+        </div>`).join('') + `</div>`;
+    }
+
+    container.innerHTML = `
+      <div class="screen">
+        <div class="screen-header">
+          <div>
+            <h2>Error Log</h2>
+            <p>Registre erros para identificar padrões e melhorar.</p>
+          </div>
+          <button type="button" class="btn btn-primary" data-action="add-error">
+            ${ICONS.plus.replace('class="icon"', 'class="icon icon-sm"')}
+            Registrar erro
+          </button>
+        </div>
+        ${filterBarHtml}
+        ${listHtml}
+      </div>`;
+
+    const subjSel = document.getElementById('error-filter-subject');
+    const typeSel = document.getElementById('error-filter-type');
+    if (subjSel) subjSel.addEventListener('change', () => { state.errorFilterSubject = subjSel.value; render(); });
+    if (typeSel) typeSel.addEventListener('change', () => { state.errorFilterType = typeSel.value; render(); });
+  }
+
+  function modalErrorHtml(err) {
+    const subjectNames = state.subjects.map(s => s.name);
+    const allSubjects = Array.from(new Set(subjectNames.concat([err ? err.subject : '']).filter(Boolean)));
+    const isCustomInitially = !!err && !subjectNames.includes(err.subject);
+
+    const subjectOptionsHtml = allSubjects.map(s =>
+      `<option value="${esc(s)}"${!isCustomInitially && err && s === err.subject ? ' selected' : ''}>${esc(s)}</option>`
+    ).join('');
+
+    const body = `
+      <div id="error-form">
+        <div class="field">
+          <label for="input-error-subject">Matéria</label>
+          <div class="select-wrap">
+            <select id="input-error-subject" class="select-input">
+              ${subjectOptionsHtml}
+              <option value="__custom__"${isCustomInitially ? ' selected' : ''}>Outra (digitar)</option>
+            </select>
+            <span class="select-chevron">${ICONS.chevronDown}</span>
+          </div>
+          <input id="input-error-subject-custom" class="text-input font-medium" style="margin-top:0.5rem;${isCustomInitially ? '' : 'display:none'}" type="text" placeholder="Nome da matéria" value="${isCustomInitially ? esc(err.subject) : ''}">
+        </div>
+        <div class="field">
+          <label for="input-error-topic">Tópico</label>
+          <input id="input-error-topic" class="text-input font-medium" type="text" placeholder="ex: Limites" value="${err ? esc(err.topic) : ''}">
+        </div>
+        <div class="field">
+          <label for="input-error-desc">Descrição</label>
+          <textarea id="input-error-desc" class="textarea-input" rows="3" placeholder="O que deu errado?">${err ? esc(err.description) : ''}</textarea>
+        </div>
+        <div class="field">
+          <label for="input-error-type">Tipo de erro</label>
+          <div class="select-wrap">
+            <select id="input-error-type" class="select-input">
+              ${ERROR_TYPES.map(t => `<option value="${esc(t)}"${(err ? err.errorType : ERROR_TYPES[0]) === t ? ' selected' : ''}>${esc(ERROR_TYPE_LABELS[t])}</option>`).join('')}
+            </select>
+            <span class="select-chevron">${ICONS.chevronDown}</span>
+          </div>
+        </div>
+        <div class="modal-form-actions">
+          <button type="button" class="btn-secondary-block" data-action="close-modal">Cancelar</button>
+          <button type="button" class="btn-save-flex" id="error-save-btn" disabled>${err ? 'Salvar' : 'Registrar erro'}</button>
+        </div>
+      </div>`;
+    return modalShell(err ? 'Editar erro' : 'Registrar erro', body);
+  }
+
+  function wireErrorModal(err) {
+    const subjectSelect = document.getElementById('input-error-subject');
+    const customInput = document.getElementById('input-error-subject-custom');
+    const topicInput = document.getElementById('input-error-topic');
+    const descInput = document.getElementById('input-error-desc');
+    const typeSelect = document.getElementById('input-error-type');
+    const saveBtn = document.getElementById('error-save-btn');
+
+    function toggleCustom() {
+      customInput.style.display = subjectSelect.value === '__custom__' ? '' : 'none';
+    }
+    function resolvedSubject() {
+      return subjectSelect.value === '__custom__' ? customInput.value.trim() : subjectSelect.value;
+    }
+    function refresh() {
+      const ok = resolvedSubject().length > 0 && topicInput.value.trim().length > 0 && descInput.value.trim().length > 0;
+      saveBtn.disabled = !ok;
+    }
+
+    subjectSelect.addEventListener('change', () => { toggleCustom(); refresh(); });
+    customInput.addEventListener('input', refresh);
+    topicInput.addEventListener('input', refresh);
+    descInput.addEventListener('input', refresh);
+    toggleCustom();
+    refresh();
+
+    saveBtn.addEventListener('click', () => {
+      const subject = resolvedSubject();
+      const topic = topicInput.value.trim();
+      const description = descInput.value.trim();
+      if (!subject || !topic || !description) return;
+      const errorType = typeSelect.value;
+
+      if (err) {
+        state.errorLogs = state.errorLogs.map(e => e.id === err.id ? Object.assign({}, e, { subject, topic, description, errorType }) : e);
+      } else {
+        state.errorLogs = state.errorLogs.concat([{ id: uid(), subject, topic, description, errorType }]);
+      }
+      state.editingErrorId = null;
       state.activeModal = null;
       saveState(state);
       render();
@@ -566,6 +1014,60 @@
           render();
         }
         break;
+
+      // --- navigation ---
+      case 'switch-screen':
+        state.screen = target.getAttribute('data-screen');
+        render();
+        break;
+
+      // --- Study Log ---
+      case 'add-log':
+        state.editingLogId = null;
+        state.activeModal = 'add-log';
+        render();
+        break;
+      case 'edit-log':
+        state.editingLogId = target.getAttribute('data-id');
+        state.activeModal = 'edit-log';
+        render();
+        break;
+      case 'complete-log':
+        state.studyLogs = state.studyLogs.map(l => l.id === target.getAttribute('data-id') ? Object.assign({}, l, { status: 'completed' }) : l);
+        saveState(state);
+        render();
+        break;
+      case 'reactivate-log':
+        state.studyLogs = state.studyLogs.map(l => l.id === target.getAttribute('data-id') ? Object.assign({}, l, { status: 'active' }) : l);
+        saveState(state);
+        render();
+        break;
+      case 'switch-log-tab':
+        state.studyLogTab = target.getAttribute('data-tab');
+        render();
+        break;
+
+      // --- Error Log ---
+      case 'add-error':
+        state.editingErrorId = null;
+        state.activeModal = 'add-error';
+        render();
+        break;
+      case 'edit-error':
+        state.editingErrorId = target.getAttribute('data-id');
+        state.activeModal = 'edit-error';
+        render();
+        break;
+      case 'delete-error':
+        state.errorLogs = state.errorLogs.filter(e => e.id !== target.getAttribute('data-id'));
+        saveState(state);
+        render();
+        break;
+      case 'clear-error-filters':
+        state.errorFilterSubject = '';
+        state.errorFilterType = '';
+        render();
+        break;
     }
   });
 
@@ -601,8 +1103,14 @@
     if (saved) {
       if (Array.isArray(saved.subjects)) state.subjects = saved.subjects;
       if (saved.settings) state.settings = saved.settings;
+      if (typeof saved.studyCounter === 'number') state.studyCounter = saved.studyCounter;
+      if (Array.isArray(saved.studyLogs)) state.studyLogs = saved.studyLogs;
+      if (Array.isArray(saved.errorLogs)) state.errorLogs = saved.errorLogs;
       if (typeof saved.isDark === 'boolean') state.isDark = saved.isDark;
     }
+    // Subjects saved before "lastStudiedAt" existed won't have it — default
+    // to 0 (never studied) so tie-breaking in generateSequence doesn't break.
+    state.subjects = state.subjects.map(s => Object.assign({ lastStudiedAt: 0 }, s));
     document.documentElement.classList.toggle('dark', state.isDark);
     document.querySelector('.icon-moon').style.display = state.isDark ? 'none' : '';
     document.querySelector('.icon-sun').style.display = state.isDark ? '' : 'none';

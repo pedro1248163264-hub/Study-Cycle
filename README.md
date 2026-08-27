@@ -1,6 +1,16 @@
 # Study Cycle
 
-Site estático (HTML + CSS + JS puro, sem build) para organizar ciclos de estudo semanais. Funciona 100% offline depois da primeira visita e roda direto no GitHub Pages.
+Site estático (HTML + CSS + JS puro, sem build) para organizar ciclos de estudo semanais, acompanhar o que você está estudando no momento e registrar os erros que comete pelo caminho. Funciona 100% offline depois da primeira visita e roda direto no GitHub Pages.
+
+> Histórico de mudanças: veja [`CHANGELOG.md`](./CHANGELOG.md). Toda vez que este app for atualizado (aqui ou por fora), vale registrar lá o que mudou — isso é o que permite continuar o trabalho em outro chat sem desconfigurar nada.
+
+## Telas
+
+- **Study Cycle** — decide quanto e com que frequência estudar cada matéria.
+- **Study Log** — lembra o que você está estudando agora e onde parou (livro, vídeo ou lista de questões; ativo ou concluído).
+- **Error Log** — lembra o que você errou e por quê (matéria, tópico, descrição, tipo de erro), com filtros.
+
+As três telas são propositalmente independentes: nada no Error Log ou Study Log altera a alocação de horas ou a sequência sugerida do Study Cycle.
 
 ## Como publicar no GitHub Pages
 
@@ -39,12 +49,25 @@ js/app.js                 → estado, cálculo do ciclo e toda a interação
 sw.js                      → Service Worker (cache offline + atualização)
 manifest.webmanifest      → deixa o site instalável como app (PWA)
 icons/                    → ícones do PWA e favicon
+CHANGELOG.md              → histórico do que foi mudado e por quê
 ```
 
 ## Lógica implementada
 
+### Study Cycle
 - **Horas por matéria**: cada matéria recebe uma fatia das horas semanais proporcional a `dificuldade + conteúdo + importância`, arredondada (0,5 para cima). Se essa fatia natural ficar abaixo do "mínimo de horas por matéria" configurado, ela é aumentada até o mínimo — o que pode fazer o total passar um pouco das horas semanais digitadas, de propósito.
-- **Sequência sugerida**: a cada passo, sugere a matéria com mais horas restantes, evitando repetir a mesma matéria duas vezes seguidas — a menos que ela seja a única com horas restantes.
+- **Sequência sugerida**: a cada passo, sugere a matéria com mais horas restantes, evitando repetir a mesma matéria duas vezes seguidas — a menos que ela seja a única com horas restantes. Em caso de empate nas horas restantes, desempata pela matéria que está há mais tempo sem ser estudada de verdade (não pela ordem de cadastro).
 - **Registrar tempo**: soma horas (1 a 4 por vez) à matéria escolhida.
-- **Fim do ciclo**: quando o total estudado atinge o total alocado, aparece o botão "Reiniciar ciclo", que zera as horas concluídas de todas as matérias (sem apagar as matérias).
-- Todos os dados (matérias, configurações) ficam em memória — atualizar a página reinicia para os valores de exemplo. Persistência (salvar entre sessões) não foi implementada; posso adicionar com `localStorage` se você quiser.
+- **Fim do ciclo**: quando o total estudado atinge o total alocado, aparece o botão "Reiniciar ciclo", que zera as horas concluídas de todas as matérias (sem apagar as matérias nem o histórico de "última vez estudada").
+
+### Study Log
+- Cada registro tem nome, categoria (Livro/Vídeo/Questões) e status (ativo/concluído). Novo registro sempre começa ativo.
+- Marcar como concluído não apaga o registro — ele só passa a aparecer na aba "Concluídos" (e pode ser reativado a qualquer momento).
+
+### Error Log
+- Cada erro tem matéria, tópico, descrição e tipo de erro (uma lista fixa de 7 opções).
+- O campo de matéria sugere as matérias já cadastradas no Study Cycle como atalho de digitação, mas aceita qualquer texto — é só conveniência, não cria vínculo funcional entre as telas.
+- Filtros por matéria e por tipo de erro, combináveis.
+
+### Persistência
+Todos os dados (matérias, configurações, registros de Study Log, erros, tema claro/escuro) são salvos automaticamente no **IndexedDB** do navegador — sobrevivem a fechar a aba e atualizar a página. Os dados ficam só no dispositivo/navegador onde foram criados (não sincronizam entre aparelhos).
