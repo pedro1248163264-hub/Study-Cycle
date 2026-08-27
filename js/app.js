@@ -117,6 +117,8 @@
     studyLogs: [], // { id, name, subject, category, status, ...category-specific fields }
     editingLogId: null,
     studyLogTab: 'active', // 'active' | 'completed'
+    studyLogFilterSubject: '',
+    studyLogFilterCategory: '',
     prefillLogSubject: null, // pre-fills the subject when adding a log from the "next material" flow
     nextMaterialSubject: null, // which subject's active logs the "next material" modal is showing
 
@@ -701,10 +703,46 @@
     const container = document.getElementById('screen-study-log');
     const activeLogs = state.studyLogs.filter(l => l.status === 'active');
     const completedLogs = state.studyLogs.filter(l => l.status === 'completed');
-    const shown = state.studyLogTab === 'active' ? activeLogs : completedLogs;
+    const baseShown = state.studyLogTab === 'active' ? activeLogs : completedLogs;
+
+    const subjectNames = state.subjects.map(s => s.name);
+    const filterSubjectOptions = Array.from(new Set(subjectNames.concat(state.studyLogs.map(l => l.subject).filter(Boolean)))).sort((a, b) => a.localeCompare(b));
+
+    const shown = baseShown.filter(l => {
+      if (state.studyLogFilterSubject && l.subject !== state.studyLogFilterSubject) return false;
+      if (state.studyLogFilterCategory && l.category !== state.studyLogFilterCategory) return false;
+      return true;
+    });
+
+    let filterBarHtml = '';
+    if (baseShown.length > 0) {
+      const subjectOptionsHtml = filterSubjectOptions.map(s => `<option value="${esc(s)}"${state.studyLogFilterSubject === s ? ' selected' : ''}>${esc(s)}</option>`).join('');
+      const categoryOptionsHtml = STUDY_CATEGORIES.map(c => `<option value="${esc(c)}"${state.studyLogFilterCategory === c ? ' selected' : ''}>${esc(STUDY_CATEGORY_LABELS[c])}</option>`).join('');
+      filterBarHtml = `
+        <div class="filter-bar">
+          <span class="filter-label">${ICONS.filter}Filtrar:</span>
+          <div class="filter-select-wrap">
+            <select id="log-filter-subject" class="filter-select">
+              <option value="">Todas as matérias</option>
+              ${subjectOptionsHtml}
+            </select>
+            ${ICONS.chevronDown}
+          </div>
+          <div class="filter-select-wrap">
+            <select id="log-filter-category" class="filter-select">
+              <option value="">Todos os materiais</option>
+              ${categoryOptionsHtml}
+            </select>
+            ${ICONS.chevronDown}
+          </div>
+          ${(state.studyLogFilterSubject || state.studyLogFilterCategory) ? `
+            <button type="button" class="filter-clear" data-action="clear-log-filters">${ICONS.x}Limpar</button>
+            <span class="filter-result-count">${shown.length} ${shown.length === 1 ? 'resultado' : 'resultados'}</span>` : ''}
+        </div>`;
+    }
 
     let listHtml;
-    if (shown.length === 0) {
+    if (baseShown.length === 0) {
       listHtml = state.studyLogTab === 'active' ? `
         <div class="empty-state-block">
           ${ICONS.bookMarked}
@@ -719,6 +757,13 @@
           ${ICONS.bookMarked}
           <h3>Nenhum registro concluído</h3>
           <p>Materiais marcados como concluídos aparecem aqui.</p>
+        </div>`;
+    } else if (shown.length === 0) {
+      listHtml = `
+        <div class="empty-state-block">
+          ${ICONS.filter}
+          <h3>Nenhum registro corresponde aos filtros</h3>
+          <p>Tente ajustar ou limpar os filtros.</p>
         </div>`;
     } else {
       listHtml = `<div class="list-cards">` + shown.map(log => {
@@ -764,8 +809,14 @@
             Concluídos <span class="sub-tab-count">${completedLogs.length}</span>
           </button>
         </div>
+        ${filterBarHtml}
         ${listHtml}
       </div>`;
+
+    const subjSel = document.getElementById('log-filter-subject');
+    const catSel = document.getElementById('log-filter-category');
+    if (subjSel) subjSel.addEventListener('change', () => { state.studyLogFilterSubject = subjSel.value; render(); });
+    if (catSel) catSel.addEventListener('change', () => { state.studyLogFilterCategory = catSel.value; render(); });
   }
 
   function modalStudyLogHtml(log) {
@@ -1238,6 +1289,11 @@
       case 'clear-error-filters':
         state.errorFilterSubject = '';
         state.errorFilterType = '';
+        render();
+        break;
+      case 'clear-log-filters':
+        state.studyLogFilterSubject = '';
+        state.studyLogFilterCategory = '';
         render();
         break;
     }
