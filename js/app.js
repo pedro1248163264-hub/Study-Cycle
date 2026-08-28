@@ -33,8 +33,11 @@
     });
   }
 
-  function saveState(s) {
-    const data = {
+  // Fields that make up the "syncable" data blob — everything that should
+  // travel between devices. Kept as a helper so save/load/sync all agree
+  // on exactly what's included.
+  function pickSyncableData(s) {
+    return {
       subjects: s.subjects,
       settings: s.settings,
       studyCounter: s.studyCounter,
@@ -42,10 +45,26 @@
       errorLogs: s.errorLogs,
       isDark: s.isDark,
     };
+  }
+
+  function saveState(s, opts) {
+    opts = opts || {};
+    // Any local change bumps lastModifiedAt, which is what the sync button
+    // compares against the server's timestamp. Callers that are applying
+    // data *from* a sync (not a fresh local edit) pass skipTouch so pulling
+    // doesn't immediately look like a new unsynced change.
+    if (!opts.skipTouch) {
+      s.lastModifiedAt = Date.now();
+    }
+    const data = Object.assign(pickSyncableData(s), {
+      lastModifiedAt: s.lastModifiedAt,
+      lastSyncedAt: s.lastSyncedAt,
+    });
     openDatabase().then(db => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       tx.objectStore(STORE_NAME).put(data, STATE_KEY);
     }).catch(() => {});
+    if (!opts.skipStatusRender) renderSyncStatus();
   }
 
   function loadState() {
@@ -57,6 +76,179 @@
         req.onerror = () => resolve(null);
       });
     }).catch(() => null);
+  }
+
+  // ---------- CLOUD SYNC (Supabase) ----------
+  // No login screen, but not wide open either: every device shares one
+  // fixed row (SYNC_KEY) in `app_state`, and that table is locked down on
+  // the database side — the only way in is through two RPC functions
+  // (get_app_state / set_app_state) that check a passcode you set, hashed
+  // in Postgres. The "anon key" below is safe to expose in frontend code;
+  // it's just an identifier, not the thing that grants access.
+  const SUPABASE_URL = 'https://rhipgkcoacrarablillj.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJoaXBna2NvYWNyYXJhYmxpbGxqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc4NzM4MjIsImV4cCI6MjEwMzQ0OTgyMn0.WfPALUnfcrwvibkb39cWh1_Vj-UdMm7lgFgiWj0u-5w';
+  const SYNC_CODE_STORAGE_KEY = 'studyCycleSyncCode'; // per-device, never synced
+
+  function supabaseHeaders(extra) {
+    return Object.assign({
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+      'Content-Type': 'application/json',
+    }, extra || {});
+  }
+
+  function callRpc(fnName, params) {
+    return fetch(SUPABASE_URL + '/rest/v1/rpc/' + fnName, {
+      method: 'POST',
+      headers: supabaseHeaders(),
+      body: JSON.stringify(params),
+    }).then(res => {
+      if (res.ok) return res.status === 204 ? null : res.json();
+      return res.json().catch(() => null).then(body => {
+        const msg = (body && (body.message || body.hint)) || ('HTTP ' + res.status);
+        const err = new Error(msg);
+        err.isInvalidCode = /invalid code/i.test(msg);
+        err.isCodeAlreadySet = /code already set/i.test(msg);
+        throw err;
+      });
+    });
+  }
+
+  function getSyncCode() {
+    return localStorage.getItem(SYNC_CODE_STORAGE_KEY) || null;
+  }
+
+  function checkSyncCodeExists() {
+    return callRpc('sync_code_exists', {});
+  }
+
+  function claimSyncCode(code) {
+    return callRpc('claim_sync_code', { p_code: code });
+  }
+
+  // Fetches the remote row (if any). Returns { data, updatedAtMs } or null.
+  function fetchRemoteState(code) {
+    return callRpc('get_app_state', { p_code: code }).then(rows => {
+      if (!rows || rows.length === 0) return null;
+      return { data: rows[0].data, updatedAtMs: new Date(rows[0].updated_at).getTime() };
+    });
+  }
+
+  // Upserts the local data blob to the remote row, stamped with `atMs`.
+  function pushLocalState(code, dataBlob, atMs) {
+    return callRpc('set_app_state', {
+      p_code: code,
+      p_data: dataBlob,
+      p_updated_at: new Date(atMs).toISOString(),
+    });
+  }
+
+  // Entry point for the sync button: makes sure a passcode is set on this
+  // device before doing any network work.
+  function syncNow() {
+    if (state.syncStatus === 'syncing') return;
+    const code = getSyncCode();
+    if (!code) {
+      state.activeModal = 'sync-passcode';
+      render();
+      return;
+    }
+    performSync(code);
+  }
+
+  // Runs one round of sync: whichever side (local vs. remote) has the more
+  // recent change wins and overwrites the other, per last-write-wins.
+  function performSync(code) {
+    state.syncStatus = 'syncing';
+    renderSyncStatus();
+
+    fetchRemoteState(code).then(remote => {
+      const localAt = state.lastModifiedAt || 0;
+      const remoteAt = remote ? remote.updatedAtMs : 0;
+
+      if (remote && remoteAt > localAt) {
+        // Remote is newer — pull it down and apply to local state/IndexedDB.
+        const rd = remote.data || {};
+        if (Array.isArray(rd.subjects)) state.subjects = rd.subjects;
+        if (rd.settings) state.settings = rd.settings;
+        if (typeof rd.studyCounter === 'number') state.studyCounter = rd.studyCounter;
+        if (Array.isArray(rd.studyLogs)) state.studyLogs = rd.studyLogs;
+        if (Array.isArray(rd.errorLogs)) state.errorLogs = rd.errorLogs;
+        if (typeof rd.isDark === 'boolean') state.isDark = rd.isDark;
+        state.subjects = state.subjects.map(s => Object.assign({ lastStudiedAt: 0 }, s));
+
+        state.lastModifiedAt = remoteAt;
+        state.lastSyncedAt = Date.now();
+        saveState(state, { skipTouch: true, skipStatusRender: true });
+
+        document.documentElement.classList.toggle('dark', state.isDark);
+        document.querySelector('.icon-moon').style.display = state.isDark ? 'none' : '';
+        document.querySelector('.icon-sun').style.display = state.isDark ? '' : 'none';
+
+        state.syncStatus = 'synced';
+        state.syncDirection = 'pulled';
+        render();
+      } else {
+        // Local is newer (or nothing remote yet) — push it up.
+        const now = Date.now();
+        return pushLocalState(code, pickSyncableData(state), now).then(() => {
+          state.lastModifiedAt = now;
+          state.lastSyncedAt = now;
+          saveState(state, { skipTouch: true, skipStatusRender: true });
+          state.syncStatus = 'synced';
+          state.syncDirection = 'pushed';
+          renderSyncStatus();
+        });
+      }
+    }).catch(err => {
+      if (err && err.isInvalidCode) {
+        // Wrong passcode saved on this device — forget it and ask again.
+        localStorage.removeItem(SYNC_CODE_STORAGE_KEY);
+        state.syncStatus = 'error';
+        state.syncError = 'Senha incorreta. Digite novamente.';
+        state.activeModal = 'sync-passcode';
+        render();
+        return;
+      }
+      state.syncStatus = 'error';
+      state.syncError = (err && err.message) || 'Erro de conexão';
+      renderSyncStatus();
+    });
+  }
+
+  function formatSyncTime(ms) {
+    if (!ms) return null;
+    const d = new Date(ms);
+    return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  // Updates only the header sync button + status line, without touching
+  // the rest of the screen — cheap enough to call after every local edit.
+  function renderSyncStatus() {
+    const btn = document.getElementById('sync-btn');
+    const dot = document.getElementById('sync-dot');
+    const statusEl = document.getElementById('sync-status');
+    if (!btn || !statusEl) return;
+
+    const hasPending = (state.lastModifiedAt || 0) > (state.lastSyncedAt || 0);
+    btn.classList.toggle('is-syncing', state.syncStatus === 'syncing');
+    dot.hidden = !hasPending || state.syncStatus === 'syncing';
+
+    statusEl.classList.toggle('is-error', state.syncStatus === 'error');
+
+    if (state.syncStatus === 'syncing') {
+      statusEl.innerHTML = `${ICONS.refreshCw}Sincronizando…`;
+    } else if (state.syncStatus === 'error') {
+      statusEl.innerHTML = `${ICONS.cloudOff}Erro ao sincronizar: ${esc(state.syncError || '')}`;
+    } else if (state.lastSyncedAt) {
+      const time = formatSyncTime(state.lastSyncedAt);
+      const dirLabel = state.syncDirection === 'pulled' ? ' (dados recebidos)' : state.syncDirection === 'pushed' ? ' (dados enviados)' : '';
+      statusEl.innerHTML = hasPending
+        ? `${ICONS.refreshCw}Última sincronização às ${time}${dirLabel} · há alterações não sincronizadas`
+        : `${ICONS.refreshCw}Sincronizado às ${time}${dirLabel}`;
+    } else {
+      statusEl.innerHTML = `${ICONS.refreshCw}Ainda não sincronizado neste aparelho`;
+    }
   }
 
   // ---------- INITIAL DATA ----------
@@ -130,6 +322,13 @@
 
     // --- Navigation (Study Cycle is untouched; these are additive screens) ---
     screen: 'dashboard', // 'dashboard' | 'study-log' | 'error-log'
+
+    // --- Cloud sync (manual, last-write-wins) ---
+    lastModifiedAt: 0, // bumped on every local change; compared against the server's updated_at
+    lastSyncedAt: 0,   // when this device last successfully synced (pulled or pushed)
+    syncStatus: 'idle', // 'idle' | 'syncing' | 'synced' | 'error'
+    syncDirection: null, // 'pulled' | 'pushed' — for the status line, purely informational
+    syncError: null,
   };
 
   // ---------- HELPERS ----------
@@ -227,6 +426,7 @@
   function render() {
     const d = getDerived();
     renderNav();
+    renderSyncStatus();
 
     document.getElementById('screen-dashboard').style.display = state.screen === 'dashboard' ? '' : 'none';
     document.getElementById('screen-study-log').style.display = state.screen === 'study-log' ? '' : 'none';
@@ -395,6 +595,12 @@
       return;
     }
 
+    if (state.activeModal === 'sync-passcode') {
+      root.innerHTML = modalSyncPasscodeHtml();
+      wireSyncPasscodeModal();
+      return;
+    }
+
     if (state.activeModal === 'add-subject' || state.activeModal === 'edit-subject') {
       const subject = state.activeModal === 'edit-subject'
         ? state.subjects.find(s => s.id === state.editingSubjectId)
@@ -448,6 +654,80 @@
         </div>
       </div>`;
   }
+
+  // --- Sync passcode modal ---
+  function modalSyncPasscodeHtml() {
+    const body = `
+      <div id="sync-passcode-form">
+        <p class="field-help" id="sync-passcode-intro">Verificando…</p>
+        <div class="field">
+          <label for="input-sync-passcode">Senha de sincronização</label>
+          <input id="input-sync-passcode" class="text-input" type="password" autocomplete="off" placeholder="Digite sua senha">
+        </div>
+        <div id="sync-passcode-error"></div>
+        <button type="button" id="sync-passcode-btn" class="btn-primary-block" disabled>Verificando…</button>
+      </div>`;
+    return modalShell('Sincronização', body);
+  }
+
+  function wireSyncPasscodeModal() {
+    const intro = document.getElementById('sync-passcode-intro');
+    const input = document.getElementById('input-sync-passcode');
+    const errorBox = document.getElementById('sync-passcode-error');
+    const btn = document.getElementById('sync-passcode-btn');
+
+    if (state.syncError) {
+      errorBox.innerHTML = `<div class="error-box">${ICONS.alertCircle}<p>${esc(state.syncError)}</p></div>`;
+      state.syncError = null;
+    }
+
+    let mode = 'checking'; // 'create' | 'enter'
+
+    checkSyncCodeExists().then(exists => {
+      mode = exists ? 'enter' : 'create';
+      intro.textContent = exists
+        ? 'Digite a senha de sincronização que você configurou antes neste ou em outro aparelho.'
+        : 'Ainda não há uma senha configurada. Escolha uma agora — você vai digitar a mesma nos seus outros aparelhos.';
+      btn.textContent = exists ? 'Sincronizar' : 'Criar senha e sincronizar';
+      btn.disabled = false;
+    }).catch(() => {
+      mode = 'enter';
+      intro.textContent = 'Não foi possível verificar (sem internet?). Se você já tem uma senha, digite-a abaixo.';
+      btn.textContent = 'Sincronizar';
+      btn.disabled = false;
+    });
+
+    input.focus();
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') btn.click();
+    });
+
+    btn.addEventListener('click', () => {
+      const code = input.value.trim();
+      if (!code) return;
+      btn.disabled = true;
+      errorBox.innerHTML = '';
+
+      const proceed = () => {
+        localStorage.setItem(SYNC_CODE_STORAGE_KEY, code);
+        state.activeModal = null;
+        render();
+        performSync(code);
+      };
+
+      if (mode === 'create') {
+        claimSyncCode(code).then(proceed).catch(() => {
+          // Someone (another device, or you a moment ago) may have just
+          // claimed the code — just try using it as-is; if it's wrong,
+          // performSync will reopen this modal with an error.
+          proceed();
+        });
+      } else {
+        proceed();
+      }
+    });
+  }
+
 
   // --- Settings modal ---
   function modalSettingsHtml() {
@@ -1299,6 +1579,10 @@
     }
   });
 
+  document.getElementById('sync-btn').addEventListener('click', () => {
+    syncNow();
+  });
+
   document.getElementById('settings-btn').addEventListener('click', () => {
     state.activeModal = 'settings';
     render();
@@ -1343,6 +1627,8 @@
       if (Array.isArray(saved.studyLogs)) state.studyLogs = saved.studyLogs;
       if (Array.isArray(saved.errorLogs)) state.errorLogs = saved.errorLogs;
       if (typeof saved.isDark === 'boolean') state.isDark = saved.isDark;
+      if (typeof saved.lastModifiedAt === 'number') state.lastModifiedAt = saved.lastModifiedAt;
+      if (typeof saved.lastSyncedAt === 'number') state.lastSyncedAt = saved.lastSyncedAt;
     }
     // Subjects saved before "lastStudiedAt" existed won't have it — default
     // to 0 (never studied) so tie-breaking in generateSequence doesn't break.
@@ -1351,6 +1637,7 @@
     document.querySelector('.icon-moon').style.display = state.isDark ? 'none' : '';
     document.querySelector('.icon-sun').style.display = state.isDark ? '' : 'none';
     render();
+    renderSyncStatus();
   });
 
   // ---------- SERVICE WORKER (offline support + update check) ----------
