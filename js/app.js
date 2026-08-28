@@ -335,20 +335,42 @@
 
   // Splits the weekly hours across subjects proportionally to how "needy"
   // each one is (difficulty + content + importance — higher rating = more
-  // hours). Each subject's natural share is rounded half-up (5.5 -> 6,
-  // 5.4 -> 5). If a subject's natural share falls below the configured
-  // minimum, it's bumped up to that minimum — which can push the overall
-  // total a little past the weekly hours target, and that's expected.
+  // hours), using the "largest remainder" method: each subject gets the
+  // floor of its exact share, then the leftover hours (weeklyHours minus
+  // the sum of those floors) go one-by-one to the subjects with the
+  // biggest fractional remainder. This guarantees the shares always add
+  // up to exactly weeklyHours — unlike rounding each share independently,
+  // which can silently lose or gain an hour to rounding. If a subject's
+  // share still falls below the configured minimum, it's bumped up to
+  // that minimum — which can push the overall total a little past the
+  // weekly hours target, and that's expected.
   function calculateAllocations(subjects, settings) {
     const totalWeight = subjects.reduce((sum, s) => sum + (s.difficulty + s.content + s.importance), 0);
 
-    return subjects.map(s => {
+    if (totalWeight <= 0) {
+      return subjects.map(s => Object.assign({}, s, { allocated: settings.minHoursPerSubject }));
+    }
+
+    const shares = subjects.map(s => {
       const weight = s.difficulty + s.content + s.importance;
-      const naturalShare = totalWeight > 0
-        ? Math.round(settings.weeklyHours * (weight / totalWeight))
-        : 0;
+      const exact = settings.weeklyHours * (weight / totalWeight);
+      const floor = Math.floor(exact);
+      return { subject: s, floor, remainder: exact - floor };
+    });
+
+    const flooredTotal = shares.reduce((sum, sh) => sum + sh.floor, 0);
+    const leftover = Math.max(0, Math.round(settings.weeklyHours) - flooredTotal);
+
+    const bumpIndices = shares
+      .map((sh, i) => i)
+      .sort((a, b) => shares[b].remainder - shares[a].remainder)
+      .slice(0, leftover);
+    const bumpSet = new Set(bumpIndices);
+
+    return shares.map((sh, i) => {
+      const naturalShare = sh.floor + (bumpSet.has(i) ? 1 : 0);
       const allocated = Math.max(naturalShare, settings.minHoursPerSubject);
-      return Object.assign({}, s, { allocated });
+      return Object.assign({}, sh.subject, { allocated });
     });
   }
 
