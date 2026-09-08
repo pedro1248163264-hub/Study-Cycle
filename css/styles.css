@@ -1375,6 +1375,177 @@ html.dark .error-badge-fuchsia { background-color: rgba(112, 26, 117, 0.25); col
 }
 
 /* =========================
+   QUESTION REVIEW (spaced repetition engine)
+   ========================= */
+.review-stats-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.review-stat-chip {
+  flex: 1;
+  min-width: 8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.875rem 1rem;
+  border-radius: var(--radius-xl);
+  background-color: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-card-sm);
+}
+.review-stat-chip-num { font-family: var(--font-display); font-weight: 700; font-size: 1.5rem; }
+.review-stat-chip-label { font-size: 0.75rem; color: var(--muted-foreground); font-weight: 500; }
+.review-stat-chip.is-due .review-stat-chip-num { color: #E11D48; }
+
+.review-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  margin-bottom: 0.75rem;
+}
+.review-section-title .icon { width: 1.125rem; height: 1.125rem; color: var(--muted-foreground); }
+
+/* due-date badges */
+.due-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1875rem 0.5rem;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.due-badge .icon { width: 0.75rem; height: 0.75rem; }
+.due-badge-overdue { background-color: #FFF1F2; color: #BE123C; border-color: #FECDD3; }
+.due-badge-today { background-color: #FFFBEB; color: #B45309; border-color: #FDE68A; }
+.due-badge-upcoming { background-color: var(--muted); color: var(--muted-foreground); border-color: var(--border); }
+html.dark .due-badge-overdue { background-color: rgba(136, 19, 55, 0.25); color: #FB7185; border-color: #9F1239; }
+html.dark .due-badge-today { background-color: rgba(120, 53, 15, 0.25); color: #FBBF24; border-color: #92400E; }
+html.dark .due-badge-upcoming { background-color: var(--muted); color: var(--muted-foreground); border-color: var(--border); }
+
+/* topic / question type tag, reused from log-card-category styling */
+.rev-type-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+.rev-type-tag .icon { width: 0.875rem; height: 0.875rem; }
+
+/* "strength" badge (based on ease factor) — reuses the error-badge base */
+.error-badge-green { background-color: #ECFDF5; color: #047857; border-color: #A7F3D0; }
+html.dark .error-badge-green { background-color: rgba(6, 95, 70, 0.25); color: #34D399; border-color: #065F46; }
+
+/* small square thumbnail for a bookmarked question's image, inside a log-card */
+.log-card-thumb {
+  width: 3rem;
+  height: 3rem;
+  border-radius: var(--radius-lg);
+  object-fit: cover;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+
+/* image upload dropzone (add-question modal) */
+.image-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 1.5rem 1rem;
+  border-radius: var(--radius-xl);
+  border: 2px dashed var(--border);
+  background-color: var(--background);
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+  width: 100%;
+}
+.image-drop:hover { border-color: var(--primary); color: var(--primary); }
+.image-drop .icon { width: 1.5rem; height: 1.5rem; }
+.image-drop input[type="file"] { display: none; }
+
+.image-preview-wrap {
+  position: relative;
+  display: inline-block;
+}
+.image-preview-wrap img {
+  max-width: 100%;
+  max-height: 12rem;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+  display: block;
+}
+.image-preview-remove {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-full);
+  background-color: rgba(15, 23, 42, 0.7);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+}
+.image-preview-remove .icon { width: 1rem; height: 1rem; }
+
+/* quality grading buttons (redo modal): Errei / Difícil / Fácil */
+.quality-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.625rem;
+  margin-top: 0.5rem;
+}
+.quality-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.875rem 0.5rem;
+  border-radius: var(--radius-xl);
+  border: 2px solid var(--border);
+  background-color: var(--background);
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: var(--foreground);
+}
+.quality-btn .icon { width: 1.125rem; height: 1.125rem; }
+.quality-btn-wrong:hover { border-color: #FB7185; background-color: #FFF1F2; color: #BE123C; }
+.quality-btn-hard:hover { border-color: #FBBF24; background-color: #FFFBEB; color: #B45309; }
+.quality-btn-easy:hover { border-color: #34D399; background-color: #ECFDF5; color: #047857; }
+
+.review-question-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+.review-question-preview img {
+  max-width: 100%;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+}
+.review-question-preview p {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* =========================
    REDUCED MOTION
    ========================= */
 @media (prefers-reduced-motion: reduce) {

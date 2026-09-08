@@ -43,6 +43,8 @@
       studyCounter: s.studyCounter,
       studyLogs: s.studyLogs,
       errorLogs: s.errorLogs,
+      topicReviews: s.topicReviews,
+      questionBank: s.questionBank,
       isDark: s.isDark,
     };
   }
@@ -174,6 +176,8 @@
         if (typeof rd.studyCounter === 'number') state.studyCounter = rd.studyCounter;
         if (Array.isArray(rd.studyLogs)) state.studyLogs = rd.studyLogs;
         if (Array.isArray(rd.errorLogs)) state.errorLogs = rd.errorLogs;
+        if (Array.isArray(rd.topicReviews)) state.topicReviews = rd.topicReviews;
+        if (Array.isArray(rd.questionBank)) state.questionBank = rd.questionBank;
         if (typeof rd.isDark === 'boolean') state.isDark = rd.isDark;
         state.subjects = state.subjects.map(s => Object.assign({ lastStudiedAt: 0 }, s));
 
@@ -320,8 +324,24 @@
     errorFilterSubject: '',
     errorFilterType: '',
 
+    // --- Question Review: spaced repetition engine (SM-2 based) ---
+    // Two independent "motors" sharing the same interval recurrence (sm2Step):
+    // topicReviews = aggregate rounds of practice on a subject+topic combo.
+    // questionBank = individual bookmarked questions (image and/or text),
+    // graded one at a time when redone. See the SPACED REPETITION ENGINE
+    // section below for the algorithm itself.
+    topicReviews: [], // { id, subject, topic, n, EF, intervalDays, lastReviewedAt, nextReviewAt, totalRounds, history[] }
+    questionBank: [], // { id, subject, topic, statementText, imageData, createdAt, n, EF, intervalDays, lastReviewedAt, nextReviewAt, retired, history[] }
+    reviewTab: 'today', // 'today' | 'topics' | 'questions'
+    questionSubTab: 'active', // 'active' | 'graduated'
+    reviewFilterSubjectTopics: '',
+    reviewFilterSubjectQuestions: '',
+    roundPrefillSubject: null, // pre-fills "Registrar rodada" when opened from a queue/topic card
+    roundPrefillTopic: null,
+    redoingQuestionId: null, // which question the "redo" modal is grading
+
     // --- Navigation (Study Cycle is untouched; these are additive screens) ---
-    screen: 'dashboard', // 'dashboard' | 'study-log' | 'error-log'
+    screen: 'dashboard', // 'dashboard' | 'study-log' | 'error-log' | 'question-review'
 
     // --- Cloud sync (manual, last-write-wins) ---
     lastModifiedAt: 0, // bumped on every local change; compared against the server's updated_at
@@ -431,6 +451,151 @@
     return div.innerHTML;
   }
 
+  // ---------- SPACED REPETITION ENGINE (Question Review) ----------
+  // Two "motors" — Tópico (rodadas agregadas) e Questão (bookmark individual)
+  // — share the exact same interval recurrence: the classic SM-2 formula
+  // (Wozniak, 1987). What differs is only how the 0-5 "quality" grade fed
+  // into it is derived:
+  //   - Tópico: combina a taxa de erro do lote + a dificuldade que você
+  //     sentiu, porque nenhuma das duas sozinha é confiável.
+  //   - Questão: vem direto de 3 botões ao refazer (Errei / Difícil / Fácil).
+  // Rounds do dia da aquisição (Camada 1, fixação) nunca devem alimentar
+  // esse motor — só rodadas de dias depois, porque "overlearning" no mesmo
+  // dia não prediz retenção real. Isso é decisão de uso, não travado no
+  // código (é só não clicar em "Registrar rodada" na fixação do dia 1).
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
+  const MAX_INTERVAL_DAYS = 90; // trava prática: nunca deixa algo sumir por >~3 meses num ciclo ativo de vestibular
+  const GRADUATE_AFTER_N = 4;   // nº de acertos seguidos até uma questão "graduar" e sair da fila ativa
+  const REDO_QUALITY = { wrong: 1, hard: 3, easy: 5 };
+
+  // The classic SM-2 recurrence itself — identical for both motors.
+  function sm2Step(n, EF, prevIntervalDays, quality) {
+    let interval, nextN;
+    if (quality >= 3) {
+      if (n === 0) interval = 1;
+      else if (n === 1) interval = 6;
+      else interval = Math.round(prevIntervalDays * EF);
+      nextN = n + 1;
+    } else {
+      nextN = 0;
+      interval = 1;
+    }
+    let nextEF = EF + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
+    if (nextEF < 1.3) nextEF = 1.3;
+    return { n: nextN, EF: nextEF, intervalDays: Math.min(interval, MAX_INTERVAL_DAYS) };
+  }
+
+  // % de erro no lote -> nota 0-5 (0% erro = 5, 100% erro = 0, linear).
+  function errorRateToQuality(rate) {
+    const q = Math.round(5 - rate * 5);
+    return Math.max(0, Math.min(5, q));
+  }
+
+  // Combina a taxa de erro automática com a dificuldade sentida (1-5,
+  // mesma escala 0-5 do SM-2) que o usuário informa.
+  function combinedQuality(errorRate, feltDifficulty) {
+    return Math.round((errorRateToQuality(errorRate) + feltDifficulty) / 2);
+  }
+
+  function applyTopicRound(topic, questionsCount, wrongCount, feltDifficulty) {
+    const errorRate = questionsCount > 0 ? Math.min(1, wrongCount / questionsCount) : 0;
+    const quality = combinedQuality(errorRate, feltDifficulty);
+    const step = sm2Step(topic.n || 0, topic.EF || 2.5, topic.intervalDays || 1, quality);
+    const now = Date.now();
+    return Object.assign({}, topic, {
+      n: step.n,
+      EF: step.EF,
+      intervalDays: step.intervalDays,
+      lastReviewedAt: now,
+      nextReviewAt: now + step.intervalDays * MS_PER_DAY,
+      totalRounds: (topic.totalRounds || 0) + 1,
+      history: (topic.history || []).concat([{ at: now, questionsCount, wrongCount, feltDifficulty, quality, intervalDays: step.intervalDays }]),
+    });
+  }
+
+  function applyQuestionRedo(q, result) {
+    const quality = REDO_QUALITY[result];
+    const step = sm2Step(q.n || 0, q.EF || 2.5, q.intervalDays || 1, quality);
+    const now = Date.now();
+    return Object.assign({}, q, {
+      n: step.n,
+      EF: step.EF,
+      intervalDays: step.intervalDays,
+      lastReviewedAt: now,
+      nextReviewAt: now + step.intervalDays * MS_PER_DAY,
+      retired: step.n >= GRADUATE_AFTER_N,
+      history: (q.history || []).concat([{ at: now, result, quality, intervalDays: step.intervalDays }]),
+    });
+  }
+
+  // Round-robin entre matérias: garante que a fila do dia misture matérias
+  // em vez de agrupar tudo da mesma matéria em sequência — é o que a
+  // pesquisa de interleaving mostra que funciona melhor do que blocar.
+  function interleaveBySubject(items) {
+    const groups = {};
+    const order = [];
+    items.forEach((it) => {
+      const key = it.subject || '—';
+      if (!groups[key]) { groups[key] = []; order.push(key); }
+      groups[key].push(it);
+    });
+    const result = [];
+    let more = true;
+    while (more) {
+      more = false;
+      order.forEach((key) => {
+        if (groups[key].length) {
+          result.push(groups[key].shift());
+          more = true;
+        }
+      });
+    }
+    return result;
+  }
+
+  function efLabel(EF) {
+    if (EF >= 2.3) return { text: 'Consolidado', cls: 'error-badge-green' };
+    if (EF >= 1.8) return { text: 'Em progresso', cls: 'error-badge-amber' };
+    return { text: 'Frágil', cls: 'error-badge-rose' };
+  }
+
+  function dueBadgeHtml(nextReviewAt) {
+    if (!nextReviewAt) return '';
+    const diffDays = Math.floor((nextReviewAt - Date.now()) / MS_PER_DAY);
+    if (diffDays < 0) return `<span class="due-badge due-badge-overdue">${ICONS.flame}Atrasada ${Math.abs(diffDays)}d</span>`;
+    if (diffDays === 0) return `<span class="due-badge due-badge-today">${ICONS.flame}Hoje</span>`;
+    return `<span class="due-badge due-badge-upcoming">${ICONS.clock}Em ${diffDays}d</span>`;
+  }
+
+  function formatDate(ms) {
+    if (!ms) return '—';
+    return new Date(ms).toLocaleDateString('pt-BR');
+  }
+
+  // Redimensiona/comprime a imagem no navegador antes de guardar em base64,
+  // pra não inflar o IndexedDB nem o payload de sincronização.
+  function resizeImageFile(file, maxDim, quality) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          let w = img.width, h = img.height;
+          if (w > h && w > maxDim) { h = Math.round(h * (maxDim / w)); w = maxDim; }
+          else if (h >= w && h > maxDim) { w = Math.round(w * (maxDim / h)); h = maxDim; }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = reject;
+        img.src = reader.result;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
   // ---------- DERIVED STATE ----------
   function getDerived() {
     const allocatedSubjects = calculateAllocations(state.subjects, state.settings);
@@ -453,6 +618,7 @@
     document.getElementById('screen-dashboard').style.display = state.screen === 'dashboard' ? '' : 'none';
     document.getElementById('screen-study-log').style.display = state.screen === 'study-log' ? '' : 'none';
     document.getElementById('screen-error-log').style.display = state.screen === 'error-log' ? '' : 'none';
+    document.getElementById('screen-question-review').style.display = state.screen === 'question-review' ? '' : 'none';
 
     if (state.screen === 'dashboard') {
       // --- Study Cycle: existing, finished feature — logic untouched ---
@@ -463,6 +629,8 @@
       renderStudyLogScreen();
     } else if (state.screen === 'error-log') {
       renderErrorLogScreen();
+    } else if (state.screen === 'question-review') {
+      renderQuestionReviewScreen();
     }
 
     renderModal(d);
@@ -473,6 +641,7 @@
       { key: 'dashboard', label: 'Study Cycle', icon: ICONS.layoutDashboard },
       { key: 'study-log', label: 'Study Log', icon: ICONS.bookMarked },
       { key: 'error-log', label: 'Error Log', icon: ICONS.alertTriangle },
+      { key: 'question-review', label: 'Revisão', icon: ICONS.repeat },
     ];
     document.getElementById('nav-tabs').innerHTML = NAV_ITEMS.map(item => `
       <button type="button" class="nav-tab${state.screen === item.key ? ' active' : ''}" data-action="switch-screen" data-screen="${item.key}">
@@ -659,6 +828,25 @@
         : null;
       root.innerHTML = modalErrorHtml(err);
       wireErrorModal(err);
+      return;
+    }
+
+    if (state.activeModal === 'add-round') {
+      root.innerHTML = modalRoundHtml();
+      wireRoundModal();
+      return;
+    }
+
+    if (state.activeModal === 'add-question') {
+      root.innerHTML = modalQuestionHtml();
+      wireQuestionModal();
+      return;
+    }
+
+    if (state.activeModal === 'redo-question') {
+      const q = state.questionBank.find(qq => qq.id === state.redoingQuestionId);
+      if (!q) { root.innerHTML = ''; return; }
+      root.innerHTML = modalRedoHtml(q);
       return;
     }
   }
@@ -1490,6 +1678,519 @@
     });
   }
 
+  // ---------- QUESTION REVIEW SCREEN ----------
+
+  function reviewQueueItemHtml(item) {
+    if (item.kind === 'topic') {
+      const strength = efLabel(item.EF);
+      return `
+        <div class="log-card">
+          <div class="log-card-main">
+            <div class="log-card-meta">
+              <span class="rev-type-tag">${ICONS.target}Tópico</span>
+              ${dueBadgeHtml(item.nextReviewAt)}
+              <span class="error-badge ${strength.cls}">${strength.text}</span>
+            </div>
+            <p class="log-card-name">${esc(item.subject)}</p>
+            <p class="log-card-detail">${esc(item.topic)} &middot; última rodada: ${formatDate(item.lastReviewedAt)}</p>
+          </div>
+          <div class="log-card-actions">
+            <button type="button" class="btn-chip" data-action="open-add-round" data-subject="${esc(item.subject)}" data-topic="${esc(item.topic)}">${ICONS.repeat.replace('class="icon"', 'class="icon icon-sm"')}Registrar rodada</button>
+          </div>
+        </div>`;
+    }
+    const thumb = item.imageData ? `<img class="log-card-thumb" src="${item.imageData}" alt="">` : '';
+    const titleLine = [item.subject, item.topic].filter(Boolean).join(' · ') || 'Questão salva';
+    return `
+      <div class="log-card">
+        ${thumb}
+        <div class="log-card-main">
+          <div class="log-card-meta">
+            <span class="rev-type-tag">${ICONS.image}Questão</span>
+            ${dueBadgeHtml(item.nextReviewAt)}
+          </div>
+          <p class="log-card-name">${esc(titleLine)}</p>
+          ${item.statementText ? `<p class="log-card-detail">${esc(item.statementText.slice(0, 90))}${item.statementText.length > 90 ? '…' : ''}</p>` : ''}
+        </div>
+        <div class="log-card-actions">
+          <button type="button" class="btn-chip" data-action="open-redo-question" data-id="${item.id}">${ICONS.repeat.replace('class="icon"', 'class="icon icon-sm"')}Refazer</button>
+        </div>
+      </div>`;
+  }
+
+  function renderReviewTodayHtml(dueQueue, upcoming) {
+    let dueHtml;
+    if (dueQueue.length === 0) {
+      dueHtml = `
+        <div class="empty-state-block">
+          ${ICONS.checkCircle}
+          <h3>Nada para revisar agora</h3>
+          <p>Quando um tópico ou questão vencer, aparece aqui — misturado entre matérias de propósito, pra treinar o reconhecimento igual na prova.</p>
+        </div>`;
+    } else {
+      dueHtml = `<div class="list-cards">${dueQueue.map(reviewQueueItemHtml).join('')}</div>`;
+    }
+
+    let upcomingHtml = '';
+    if (upcoming.length > 0) {
+      upcomingHtml = `
+        <div class="section" style="margin-top:0.5rem">
+          <div class="review-section-title">${ICONS.clock}Próximas revisões</div>
+          <div class="list-cards">${upcoming.map(reviewQueueItemHtml).join('')}</div>
+        </div>`;
+    }
+
+    return dueHtml + upcomingHtml;
+  }
+
+  function renderReviewTopicsHtml() {
+    const subjectNames = state.subjects.map(s => s.name);
+    const filterOptions = Array.from(new Set(subjectNames.concat(state.topicReviews.map(t => t.subject)))).sort((a, b) => a.localeCompare(b));
+    const filtered = state.topicReviews
+      .filter(t => !state.reviewFilterSubjectTopics || t.subject === state.reviewFilterSubjectTopics)
+      .sort((a, b) => (a.nextReviewAt || 0) - (b.nextReviewAt || 0));
+
+    let filterBarHtml = '';
+    if (state.topicReviews.length > 0) {
+      filterBarHtml = `
+        <div class="filter-bar">
+          <span class="filter-label">${ICONS.filter}Filtrar:</span>
+          <div class="filter-select-wrap">
+            <select id="review-filter-subject-topics" class="filter-select">
+              <option value="">Todas as matérias</option>
+              ${filterOptions.map(s => `<option value="${esc(s)}"${state.reviewFilterSubjectTopics === s ? ' selected' : ''}>${esc(s)}</option>`).join('')}
+            </select>
+            ${ICONS.chevronDown}
+          </div>
+          ${state.reviewFilterSubjectTopics ? `<button type="button" class="filter-clear" data-action="clear-review-filter-topics">${ICONS.x}Limpar</button>` : ''}
+        </div>`;
+    }
+
+    let listHtml;
+    if (state.topicReviews.length === 0) {
+      listHtml = `
+        <div class="empty-state-block">
+          ${ICONS.target}
+          <h3>Nenhum tópico acompanhado ainda</h3>
+          <p>Registre uma rodada de questões (a 2ª rodada em diante — não a fixação do mesmo dia) para o motor começar a agendar as próximas.</p>
+          <button type="button" class="btn btn-primary" data-action="open-add-round">${ICONS.plus.replace('class="icon"', 'class="icon icon-sm"')}Registrar rodada</button>
+        </div>`;
+    } else if (filtered.length === 0) {
+      listHtml = `<div class="empty-state-block">${ICONS.filter}<h3>Nenhum tópico corresponde ao filtro</h3></div>`;
+    } else {
+      listHtml = `<div class="list-cards">` + filtered.map(t => {
+        const strength = efLabel(t.EF);
+        return `
+        <div class="log-card">
+          <div class="log-card-main">
+            <div class="log-card-meta">
+              ${dueBadgeHtml(t.nextReviewAt)}
+              <span class="error-badge ${strength.cls}">${strength.text}</span>
+              <span class="log-card-subject">${t.totalRounds} rodada${t.totalRounds === 1 ? '' : 's'}</span>
+            </div>
+            <p class="log-card-name">${esc(t.subject)}</p>
+            <p class="log-card-detail">${esc(t.topic)} &middot; última: ${formatDate(t.lastReviewedAt)} &middot; próxima: ${formatDate(t.nextReviewAt)}</p>
+          </div>
+          <div class="log-card-actions">
+            <button type="button" class="btn-chip" data-action="open-add-round" data-subject="${esc(t.subject)}" data-topic="${esc(t.topic)}">${ICONS.repeat.replace('class="icon"', 'class="icon icon-sm"')}Nova rodada</button>
+            <button type="button" class="btn-chip btn-chip-danger" data-action="delete-topic-review" data-id="${t.id}">${ICONS.trash.replace('class="icon"', 'class="icon icon-sm"')}Excluir</button>
+          </div>
+        </div>`;
+      }).join('') + `</div>`;
+    }
+
+    return filterBarHtml + listHtml;
+  }
+
+  function renderReviewQuestionsHtml() {
+    const activeQs = state.questionBank.filter(q => !q.retired).sort((a, b) => (a.nextReviewAt || 0) - (b.nextReviewAt || 0));
+    const graduatedQs = state.questionBank.filter(q => q.retired);
+    const baseShown = state.questionSubTab === 'active' ? activeQs : graduatedQs;
+
+    const subjectNames = state.subjects.map(s => s.name);
+    const filterOptions = Array.from(new Set(subjectNames.concat(state.questionBank.map(q => q.subject).filter(Boolean)))).sort((a, b) => a.localeCompare(b));
+    const filtered = baseShown.filter(q => !state.reviewFilterSubjectQuestions || q.subject === state.reviewFilterSubjectQuestions);
+
+    let filterBarHtml = '';
+    if (baseShown.length > 0) {
+      filterBarHtml = `
+        <div class="filter-bar">
+          <span class="filter-label">${ICONS.filter}Filtrar:</span>
+          <div class="filter-select-wrap">
+            <select id="review-filter-subject-questions" class="filter-select">
+              <option value="">Todas as matérias</option>
+              ${filterOptions.map(s => `<option value="${esc(s)}"${state.reviewFilterSubjectQuestions === s ? ' selected' : ''}>${esc(s)}</option>`).join('')}
+            </select>
+            ${ICONS.chevronDown}
+          </div>
+          ${state.reviewFilterSubjectQuestions ? `<button type="button" class="filter-clear" data-action="clear-review-filter-questions">${ICONS.x}Limpar</button>` : ''}
+        </div>`;
+    }
+
+    let listHtml;
+    if (baseShown.length === 0) {
+      listHtml = state.questionSubTab === 'active' ? `
+        <div class="empty-state-block">
+          ${ICONS.image}
+          <h3>Nenhuma questão salva</h3>
+          <p>Guarde o print ou o enunciado de uma questão difícil para o motor te lembrar de refazê-la.</p>
+          <button type="button" class="btn btn-primary" data-action="open-add-question">${ICONS.plus.replace('class="icon"', 'class="icon icon-sm"')}Salvar questão</button>
+        </div>` : `
+        <div class="empty-state-block">
+          ${ICONS.checkCircle}
+          <h3>Nenhuma questão graduada ainda</h3>
+          <p>Uma questão sai da fila ativa sozinha depois de ${GRADUATE_AFTER_N} acertos seguidos ao ser refeita.</p>
+        </div>`;
+    } else if (filtered.length === 0) {
+      listHtml = `<div class="empty-state-block">${ICONS.filter}<h3>Nenhuma questão corresponde ao filtro</h3></div>`;
+    } else {
+      listHtml = `<div class="list-cards">` + filtered.map(q => {
+        const thumb = q.imageData ? `<img class="log-card-thumb" src="${q.imageData}" alt="">` : '';
+        const titleLine = q.topic || (q.statementText ? q.statementText.slice(0, 60) : 'Questão salva');
+        return `
+        <div class="log-card">
+          ${thumb}
+          <div class="log-card-main">
+            <div class="log-card-meta">
+              ${state.questionSubTab === 'active' ? dueBadgeHtml(q.nextReviewAt) : `<span class="pill-completed">${ICONS.check}Graduada</span>`}
+              ${q.subject ? `<span class="log-card-subject">${esc(q.subject)}</span>` : ''}
+            </div>
+            <p class="log-card-name">${esc(titleLine)}</p>
+            ${q.statementText ? `<p class="log-card-detail">${esc(q.statementText.slice(0, 90))}${q.statementText.length > 90 ? '…' : ''}</p>` : ''}
+          </div>
+          <div class="log-card-actions">
+            ${state.questionSubTab === 'active'
+              ? `<button type="button" class="btn-chip" data-action="open-redo-question" data-id="${q.id}">${ICONS.repeat.replace('class="icon"', 'class="icon icon-sm"')}Refazer</button>`
+              : `<button type="button" class="btn-chip" data-action="revive-question" data-id="${q.id}">${ICONS.rotateCcw.replace('class="icon"', 'class="icon icon-sm"')}Reativar</button>`}
+            <button type="button" class="btn-chip btn-chip-danger" data-action="delete-question" data-id="${q.id}">${ICONS.trash.replace('class="icon"', 'class="icon icon-sm"')}Excluir</button>
+          </div>
+        </div>`;
+      }).join('') + `</div>`;
+    }
+
+    return `
+      <div class="section-header" style="margin-top:-0.5rem">
+        <div class="sub-tabs">
+          <button type="button" class="sub-tab${state.questionSubTab === 'active' ? ' active' : ''}" data-action="switch-question-subtab" data-tab="active">Ativas <span class="sub-tab-count">${activeQs.length}</span></button>
+          <button type="button" class="sub-tab${state.questionSubTab === 'graduated' ? ' active' : ''}" data-action="switch-question-subtab" data-tab="graduated">Graduadas <span class="sub-tab-count">${graduatedQs.length}</span></button>
+        </div>
+        <button type="button" class="btn btn-card-outline" data-action="open-add-question">
+          ${ICONS.plus.replace('class="icon"', 'class="icon icon-sm"')}
+          Salvar questão
+        </button>
+      </div>
+      ${filterBarHtml}
+      ${listHtml}`;
+  }
+
+  function renderQuestionReviewScreen() {
+    const container = document.getElementById('screen-question-review');
+    const now = Date.now();
+
+    const dueTopics = state.topicReviews.filter(t => t.nextReviewAt && t.nextReviewAt <= now).map(t => Object.assign({ kind: 'topic' }, t));
+    const dueQuestions = state.questionBank.filter(q => !q.retired && q.nextReviewAt && q.nextReviewAt <= now).map(q => Object.assign({ kind: 'question' }, q));
+    const dueQueue = interleaveBySubject(dueTopics.concat(dueQuestions).sort((a, b) => a.nextReviewAt - b.nextReviewAt));
+
+    const upcoming = state.topicReviews.filter(t => t.nextReviewAt && t.nextReviewAt > now).map(t => Object.assign({ kind: 'topic' }, t))
+      .concat(state.questionBank.filter(q => !q.retired && q.nextReviewAt && q.nextReviewAt > now).map(q => Object.assign({ kind: 'question' }, q)))
+      .sort((a, b) => a.nextReviewAt - b.nextReviewAt)
+      .slice(0, 10);
+
+    const activeQuestionsCount = state.questionBank.filter(q => !q.retired).length;
+
+    let body;
+    if (state.reviewTab === 'today') body = renderReviewTodayHtml(dueQueue, upcoming);
+    else if (state.reviewTab === 'topics') body = renderReviewTopicsHtml();
+    else body = renderReviewQuestionsHtml();
+
+    container.innerHTML = `
+      <div class="screen">
+        <div class="screen-header">
+          <div>
+            <h2>Revisão de Questões</h2>
+            <p>Motor de repetição espaçada para tópicos e questões que valem uma nova rodada.</p>
+          </div>
+          <button type="button" class="btn btn-primary" data-action="open-add-round">
+            ${ICONS.plus.replace('class="icon"', 'class="icon icon-sm"')}
+            Registrar rodada
+          </button>
+        </div>
+
+        <div class="review-stats-row">
+          <div class="review-stat-chip${dueQueue.length > 0 ? ' is-due' : ''}">
+            <span class="review-stat-chip-num">${dueQueue.length}</span>
+            <span class="review-stat-chip-label">Para revisar hoje</span>
+          </div>
+          <div class="review-stat-chip">
+            <span class="review-stat-chip-num">${state.topicReviews.length}</span>
+            <span class="review-stat-chip-label">Tópicos acompanhados</span>
+          </div>
+          <div class="review-stat-chip">
+            <span class="review-stat-chip-num">${activeQuestionsCount}</span>
+            <span class="review-stat-chip-label">Questões no banco</span>
+          </div>
+        </div>
+
+        <div class="sub-tabs">
+          <button type="button" class="sub-tab${state.reviewTab === 'today' ? ' active' : ''}" data-action="switch-review-tab" data-tab="today">Hoje</button>
+          <button type="button" class="sub-tab${state.reviewTab === 'topics' ? ' active' : ''}" data-action="switch-review-tab" data-tab="topics">Tópicos <span class="sub-tab-count">${state.topicReviews.length}</span></button>
+          <button type="button" class="sub-tab${state.reviewTab === 'questions' ? ' active' : ''}" data-action="switch-review-tab" data-tab="questions">Questões <span class="sub-tab-count">${activeQuestionsCount}</span></button>
+        </div>
+
+        ${body}
+      </div>`;
+
+    const topicSel = document.getElementById('review-filter-subject-topics');
+    const qSel = document.getElementById('review-filter-subject-questions');
+    if (topicSel) topicSel.addEventListener('change', () => { state.reviewFilterSubjectTopics = topicSel.value; render(); });
+    if (qSel) qSel.addEventListener('change', () => { state.reviewFilterSubjectQuestions = qSel.value; render(); });
+  }
+
+  // --- Add round modal (creates or updates a topic's aggregate engine) ---
+  function modalRoundHtml() {
+    const subjectNames = state.subjects.map(s => s.name);
+    const prefillSubject = state.roundPrefillSubject || '';
+    const allSubjects = Array.from(new Set(subjectNames.concat([prefillSubject]).filter(Boolean)));
+    const isCustomInitially = !!prefillSubject && !subjectNames.includes(prefillSubject);
+    const subjectOptionsHtml = allSubjects.map(s =>
+      `<option value="${esc(s)}"${!isCustomInitially && s === prefillSubject ? ' selected' : ''}>${esc(s)}</option>`
+    ).join('');
+
+    const body = `
+      <div id="round-form">
+        <div class="field">
+          <label for="input-round-subject">Matéria</label>
+          <div class="select-wrap">
+            <select id="input-round-subject" class="select-input">
+              ${subjectOptionsHtml}
+              <option value="__custom__"${isCustomInitially ? ' selected' : ''}>Outra (digitar)</option>
+            </select>
+            <span class="select-chevron">${ICONS.chevronDown}</span>
+          </div>
+          <input id="input-round-subject-custom" class="text-input font-medium" style="margin-top:0.5rem;${isCustomInitially ? '' : 'display:none'}" type="text" placeholder="Nome da matéria" value="${isCustomInitially ? esc(prefillSubject) : ''}">
+        </div>
+        <div class="field">
+          <label for="input-round-topic">Tópico</label>
+          <input id="input-round-topic" class="text-input font-medium" type="text" placeholder="ex: Cinemática" value="${esc(state.roundPrefillTopic || '')}">
+          <p class="field-help">Se já existir um tópico com essa matéria + esse nome, a rodada entra no histórico dele. Senão, cria um novo.</p>
+        </div>
+        <div class="field">
+          <label for="input-round-count">Quantas questões você fez</label>
+          <input id="input-round-count" class="text-input" type="number" min="1" placeholder="ex: 12">
+        </div>
+        <div class="field">
+          <label for="input-round-wrong">Quantas você errou</label>
+          <input id="input-round-wrong" class="text-input" type="number" min="0" placeholder="ex: 3">
+        </div>
+        ${ratingRow('round-difficulty', 'Dificuldade sentida', 3, 'Muito difícil', 'Muito fácil')}
+        <div id="round-error"></div>
+        <div class="modal-form-actions">
+          <button type="button" class="btn-secondary-block" data-action="close-modal">Cancelar</button>
+          <button type="button" class="btn-save-flex" id="round-save-btn" disabled>Registrar rodada</button>
+        </div>
+      </div>`;
+    return modalShell('Registrar rodada de questões', body);
+  }
+
+  function wireRoundModal() {
+    const subjectSelect = document.getElementById('input-round-subject');
+    const customInput = document.getElementById('input-round-subject-custom');
+    const topicInput = document.getElementById('input-round-topic');
+    const countInput = document.getElementById('input-round-count');
+    const wrongInput = document.getElementById('input-round-wrong');
+    const errorBox = document.getElementById('round-error');
+    const saveBtn = document.getElementById('round-save-btn');
+    let difficulty = 3;
+
+    function toggleCustom() { customInput.style.display = subjectSelect.value === '__custom__' ? '' : 'none'; }
+    function resolvedSubject() { return subjectSelect.value === '__custom__' ? customInput.value.trim() : subjectSelect.value; }
+
+    function refresh() {
+      const count = parseInt(countInput.value, 10);
+      const wrong = parseInt(wrongInput.value, 10);
+      errorBox.innerHTML = '';
+      let ok = resolvedSubject().length > 0 && topicInput.value.trim().length > 0 && count > 0 && !isNaN(wrong) && wrong >= 0;
+      if (ok && wrong > count) {
+        ok = false;
+        errorBox.innerHTML = `<div class="error-box">${ICONS.alertCircle}<p>O número de erradas não pode ser maior que o total de questões.</p></div>`;
+      }
+      saveBtn.disabled = !ok;
+    }
+
+    subjectSelect.addEventListener('change', () => { toggleCustom(); refresh(); });
+    customInput.addEventListener('input', refresh);
+    topicInput.addEventListener('input', refresh);
+    countInput.addEventListener('input', refresh);
+    wrongInput.addEventListener('input', refresh);
+    document.querySelectorAll('[data-rating-group="round-difficulty"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        difficulty = parseInt(btn.getAttribute('data-value'), 10);
+        document.querySelectorAll('[data-rating-group="round-difficulty"]').forEach(b =>
+          b.classList.toggle('active', parseInt(b.getAttribute('data-value'), 10) <= difficulty));
+        refresh();
+      });
+    });
+    toggleCustom();
+    refresh();
+
+    saveBtn.addEventListener('click', () => {
+      const subject = resolvedSubject();
+      const topic = topicInput.value.trim();
+      const count = parseInt(countInput.value, 10);
+      const wrong = parseInt(wrongInput.value, 10);
+      if (!subject || !topic || !(count > 0) || isNaN(wrong) || wrong < 0 || wrong > count) return;
+
+      const norm = (s) => s.trim().toLowerCase();
+      const existing = state.topicReviews.find(t => norm(t.subject) === norm(subject) && norm(t.topic) === norm(topic));
+      if (existing) {
+        state.topicReviews = state.topicReviews.map(t => t.id === existing.id ? applyTopicRound(t, count, wrong, difficulty) : t);
+      } else {
+        const fresh = { id: uid(), subject, topic, n: 0, EF: 2.5, intervalDays: 1, totalRounds: 0, history: [] };
+        state.topicReviews = state.topicReviews.concat([applyTopicRound(fresh, count, wrong, difficulty)]);
+      }
+      state.roundPrefillSubject = null;
+      state.roundPrefillTopic = null;
+      state.activeModal = null;
+      saveState(state);
+      render();
+    });
+  }
+
+  // --- Add question modal (bookmark a question to redo later, image and/or text) ---
+  function modalQuestionHtml() {
+    const subjectNames = state.subjects.map(s => s.name);
+    const subjectOptionsHtml = subjectNames.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+    const body = `
+      <div id="question-form">
+        <div class="field">
+          <label for="input-question-subject">Matéria (opcional)</label>
+          <div class="select-wrap">
+            <select id="input-question-subject" class="select-input">
+              <option value="">Sem matéria</option>
+              ${subjectOptionsHtml}
+            </select>
+            <span class="select-chevron">${ICONS.chevronDown}</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="input-question-topic">Tópico (opcional)</label>
+          <input id="input-question-topic" class="text-input font-medium" type="text" placeholder="ex: Termoquímica">
+        </div>
+        <div class="field">
+          <label for="input-question-statement">Enunciado (opcional se anexar imagem)</label>
+          <textarea id="input-question-statement" class="textarea-input" rows="4" placeholder="Cole o enunciado, se quiser"></textarea>
+        </div>
+        <div class="field">
+          <label>Imagem (opcional se escreveu o enunciado)</label>
+          <div id="question-image-area">
+            <label class="image-drop" id="question-image-drop">
+              ${ICONS.image}
+              <span>Toque para escolher uma foto/print</span>
+              <input type="file" id="input-question-image" accept="image/*">
+            </label>
+          </div>
+        </div>
+        <div id="question-error"></div>
+        <div class="modal-form-actions">
+          <button type="button" class="btn-secondary-block" data-action="close-modal">Cancelar</button>
+          <button type="button" class="btn-save-flex" id="question-save-btn" disabled>Salvar questão</button>
+        </div>
+      </div>`;
+    return modalShell('Salvar questão para refazer', body);
+  }
+
+  function wireQuestionModal() {
+    const subjectSelect = document.getElementById('input-question-subject');
+    const topicInput = document.getElementById('input-question-topic');
+    const statementInput = document.getElementById('input-question-statement');
+    const imageArea = document.getElementById('question-image-area');
+    const errorBox = document.getElementById('question-error');
+    const saveBtn = document.getElementById('question-save-btn');
+    let imageData = null;
+
+    function refresh() {
+      saveBtn.disabled = !(statementInput.value.trim().length > 0 || !!imageData);
+    }
+
+    function wireFileInput() {
+      const input = document.getElementById('input-question-image');
+      input.addEventListener('change', () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        errorBox.innerHTML = '';
+        resizeImageFile(file, 1000, 0.75).then((dataUrl) => {
+          imageData = dataUrl;
+          imageArea.innerHTML = `
+            <div class="image-preview-wrap">
+              <img src="${imageData}" alt="">
+              <button type="button" class="image-preview-remove" id="question-image-remove">${ICONS.x}</button>
+            </div>`;
+          document.getElementById('question-image-remove').addEventListener('click', () => {
+            imageData = null;
+            restoreDropzone();
+            refresh();
+          });
+          refresh();
+        }).catch(() => {
+          errorBox.innerHTML = `<div class="error-box">${ICONS.alertCircle}<p>Não consegui ler essa imagem. Tente outra.</p></div>`;
+        });
+      });
+    }
+
+    function restoreDropzone() {
+      imageArea.innerHTML = `
+        <label class="image-drop" id="question-image-drop">
+          ${ICONS.image}
+          <span>Toque para escolher uma foto/print</span>
+          <input type="file" id="input-question-image" accept="image/*">
+        </label>`;
+      wireFileInput();
+    }
+
+    wireFileInput();
+    statementInput.addEventListener('input', refresh);
+    refresh();
+
+    saveBtn.addEventListener('click', () => {
+      const subject = subjectSelect.value || '';
+      const topic = topicInput.value.trim();
+      const statementText = statementInput.value.trim();
+      if (!statementText && !imageData) return;
+      const now = Date.now();
+      const fresh = {
+        id: uid(), subject, topic, statementText, imageData,
+        createdAt: now, n: 0, EF: 2.5, intervalDays: 0,
+        lastReviewedAt: null, nextReviewAt: now, retired: false, history: [],
+      };
+      state.questionBank = state.questionBank.concat([fresh]);
+      state.activeModal = null;
+      saveState(state);
+      render();
+    });
+  }
+
+  // --- Redo modal (grades a bookmarked question: Errei / Difícil / Fácil) ---
+  function modalRedoHtml(q) {
+    const preview = `
+      <div class="review-question-preview">
+        ${q.imageData ? `<img src="${q.imageData}" alt="">` : ''}
+        ${q.statementText ? `<p>${esc(q.statementText)}</p>` : ''}
+        ${(q.subject || q.topic) ? `<p class="field-help">${esc([q.subject, q.topic].filter(Boolean).join(' · '))}</p>` : ''}
+      </div>`;
+    const body = `
+      ${preview}
+      <p class="field-help" style="margin-bottom:0.5rem">Como foi dessa vez?</p>
+      <div class="quality-buttons">
+        <button type="button" class="quality-btn quality-btn-wrong" data-action="grade-question" data-id="${q.id}" data-result="wrong">${ICONS.x}Errei</button>
+        <button type="button" class="quality-btn quality-btn-hard" data-action="grade-question" data-id="${q.id}" data-result="hard">${ICONS.alertCircle}Difícil</button>
+        <button type="button" class="quality-btn quality-btn-easy" data-action="grade-question" data-id="${q.id}" data-result="easy">${ICONS.check}Fácil</button>
+      </div>
+      <div class="modal-form-actions" style="margin-top:1.5rem">
+        <button type="button" class="btn-secondary-block" data-action="close-modal">Cancelar</button>
+      </div>`;
+    return modalShell('Refazer questão', body);
+  }
+
   // ---------- GLOBAL EVENT DELEGATION ----------
   document.addEventListener('click', (e) => {
     const target = e.target.closest('[data-action]');
@@ -1598,6 +2299,66 @@
         state.studyLogFilterCategory = '';
         render();
         break;
+
+      // --- Question Review ---
+      case 'switch-review-tab':
+        state.reviewTab = target.getAttribute('data-tab');
+        render();
+        break;
+      case 'switch-question-subtab':
+        state.questionSubTab = target.getAttribute('data-tab');
+        render();
+        break;
+      case 'open-add-round':
+        state.roundPrefillSubject = target.getAttribute('data-subject') || null;
+        state.roundPrefillTopic = target.getAttribute('data-topic') || null;
+        state.activeModal = 'add-round';
+        render();
+        break;
+      case 'open-add-question':
+        state.activeModal = 'add-question';
+        render();
+        break;
+      case 'open-redo-question':
+        state.redoingQuestionId = target.getAttribute('data-id');
+        state.activeModal = 'redo-question';
+        render();
+        break;
+      case 'grade-question': {
+        const gId = target.getAttribute('data-id');
+        const result = target.getAttribute('data-result');
+        state.questionBank = state.questionBank.map(q => q.id === gId ? applyQuestionRedo(q, result) : q);
+        state.redoingQuestionId = null;
+        state.activeModal = null;
+        saveState(state);
+        render();
+        break;
+      }
+      case 'delete-topic-review':
+        state.topicReviews = state.topicReviews.filter(t => t.id !== target.getAttribute('data-id'));
+        saveState(state);
+        render();
+        break;
+      case 'delete-question':
+        state.questionBank = state.questionBank.filter(q => q.id !== target.getAttribute('data-id'));
+        saveState(state);
+        render();
+        break;
+      case 'revive-question':
+        state.questionBank = state.questionBank.map(q => q.id === target.getAttribute('data-id')
+          ? Object.assign({}, q, { retired: false, n: 0, nextReviewAt: Date.now() })
+          : q);
+        saveState(state);
+        render();
+        break;
+      case 'clear-review-filter-topics':
+        state.reviewFilterSubjectTopics = '';
+        render();
+        break;
+      case 'clear-review-filter-questions':
+        state.reviewFilterSubjectQuestions = '';
+        render();
+        break;
     }
   });
 
@@ -1648,6 +2409,8 @@
       if (typeof saved.studyCounter === 'number') state.studyCounter = saved.studyCounter;
       if (Array.isArray(saved.studyLogs)) state.studyLogs = saved.studyLogs;
       if (Array.isArray(saved.errorLogs)) state.errorLogs = saved.errorLogs;
+      if (Array.isArray(saved.topicReviews)) state.topicReviews = saved.topicReviews;
+      if (Array.isArray(saved.questionBank)) state.questionBank = saved.questionBank;
       if (typeof saved.isDark === 'boolean') state.isDark = saved.isDark;
       if (typeof saved.lastModifiedAt === 'number') state.lastModifiedAt = saved.lastModifiedAt;
       if (typeof saved.lastSyncedAt === 'number') state.lastSyncedAt = saved.lastSyncedAt;

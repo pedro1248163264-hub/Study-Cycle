@@ -2,6 +2,30 @@
 
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
+## [v5] — Revisão de Questões: motor de repetição espaçada (SM-2)
+
+### Contexto
+Faltava decidir "quando refazer questões" de forma sistemática — não só a fixação do dia (Camada 1, que já existia como hábito fora do app), mas rodadas espaçadas depois, misturando matérias (interleaving) em vez de treino em bloco. Esta tela fecha esse gap com um motor de repetição espaçada de verdade, não um cronograma fixo.
+
+### Adicionado
+- **Nova tela "Revisão de Questões"**, quarta aba de navegação, com três sub-abas:
+  - **Hoje** — fila unificada do que está vencido (tópicos + questões), com round-robin por matéria para forçar interleaving, mais as próximas 10 revisões futuras.
+  - **Tópicos** — motor agregado: "Registrar rodada" pede matéria, tópico, quantas questões, quantas erradas e dificuldade sentida (1-5, reaproveitando o componente de rating já usado no modal de matérias). A nota que alimenta o SM-2 combina taxa de erro automática + dificuldade sentida. Rodada nova numa combinação matéria+tópico já existente (comparação case-insensitive) entra no histórico dela; senão cria um tópico novo.
+  - **Questões** — banco de questões bookmarked (imagem e/ou enunciado em texto), com abas Ativas/Graduadas. Imagem é redimensionada e comprimida no navegador (máx. 1000px, JPEG 75%) antes de virar base64. Ao refazer, três botões (Errei/Difícil/Fácil) alimentam o mesmo motor SM-2. Depois de 4 acertos seguidos a questão gradua (sai da fila ativa; pode ser reativada manualmente).
+- **Motor SM-2 compartilhado** (`sm2Step`): mesma recorrência clássica (Wozniak, 1987) usada pelos dois níveis (tópico e questão) — só muda como a nota 0-5 é calculada em cada um. Intervalo travado em no máximo 90 dias, pra não deixar nada sumir da fila por um semestre inteiro.
+- Filtro por matéria nas abas Tópicos e Questões (mesmo padrão do Error Log/Study Log).
+- Persistência: `topicReviews` e `questionBank` entram no IndexedDB e no payload de sincronização manual (incluindo as imagens em base64 — banco grande de imagens deixa a sincronização mais pesada).
+
+### Não incluído (escopo desta versão)
+- Edição de uma questão salva depois de criada (só existe adicionar/excluir/refazer) — se precisar corrigir um enunciado, hoje é excluir e recriar.
+- Limiar de retenção configurável — está fixo implicitamente na própria recorrência do SM-2 (não há um número de "% de retenção alvo" separado exposto na interface).
+- Nenhuma trava impede registrar uma rodada no mesmo dia do estudo — é intencional (fica a critério do usuário não fazer isso na Camada 1 de fixação), não uma regra imposta pelo código.
+
+### Arquivos alterados
+`index.html` (container da nova tela), `css/styles.css` (badges de vencimento, thumbnail de imagem, upload/preview de imagem, botões de nota), `js/app.js` (motor SM-2 + telas + modais + event delegation + sync/persistência), `js/icons.js` (`repeat`, `target`, `image`, `flame`), `sw.js` (v4 → v5).
+
+---
+
 ## [v4] — Campos por categoria no Study Log + seleção de material ao clicar em "Próxima matéria"
 
 ### Adicionado

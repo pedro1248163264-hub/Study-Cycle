@@ -9,8 +9,9 @@ Site estático (HTML + CSS + JS puro, sem build) para organizar ciclos de estudo
 - **Study Cycle** — decide quanto e com que frequência estudar cada matéria.
 - **Study Log** — lembra o que você está estudando agora e onde parou (livro, vídeo ou lista de questões; ativo ou concluído).
 - **Error Log** — lembra o que você errou e por quê (matéria, tópico, descrição, tipo de erro), com filtros.
+- **Revisão de Questões** — motor de repetição espaçada (baseado em SM-2) que decide quando você deve refazer questões: por tópico agregado (rodadas de prática) ou por questão individual salva (imagem/enunciado).
 
-As três telas são propositalmente independentes: nada no Error Log ou Study Log altera a alocação de horas ou a sequência sugerida do Study Cycle.
+As quatro telas são propositalmente independentes: nada no Error Log, Study Log ou Revisão de Questões altera a alocação de horas ou a sequência sugerida do Study Cycle.
 
 ## Como publicar no GitHub Pages
 
@@ -72,5 +73,14 @@ CHANGELOG.md              → histórico do que foi mudado e por quê
 - O campo de matéria sugere as matérias já cadastradas no Study Cycle como atalho de digitação, mas aceita qualquer texto — é só conveniência, não cria vínculo funcional entre as telas.
 - Filtros por matéria e por tipo de erro, combináveis.
 
+### Revisão de Questões
+Motor de repetição espaçada para decidir **quando** refazer questões — não confundir com o Error Log (que é qualitativo: "o que errei e por quê"). Dois motores independentes, que compartilham a mesma recorrência de intervalo (fórmula clássica do SM-2, Wozniak 1987), diferindo só em como a nota 0-5 ("quality") é calculada:
+
+- **Tópicos (agregado)** — "Registrar rodada": você informa matéria, tópico, quantas questões fez, quantas errou e a dificuldade sentida (1-5). A nota combina taxa de erro automática + dificuldade sentida (a média dos dois, arredondada). Se já existir um tópico com essa matéria+tópico (comparação case-insensitive), a rodada entra no histórico dele; senão, cria um novo. Cada rodada recalcula o intervalo até a próxima revisão via SM-2.
+- **Questões (individual)** — "Salvar questão": bookmark de uma questão específica (imagem e/ou enunciado em texto — pelo menos um dos dois é obrigatório). Imagens são redimensionadas e comprimidas no navegador (máx. 1000px, JPEG 75%) antes de virar base64, para não inflar o IndexedDB nem o payload de sincronização. Ao refazer, três botões (Errei/Difícil/Fácil) mapeiam para as notas 1/3/5 do SM-2. Depois de 4 acertos seguidos, a questão "gradua" — sai da fila ativa automaticamente (mas pode ser reativada manualmente na aba "Graduadas").
+- **Fila "Hoje"** — mistura tópicos e questões vencidos com um round-robin por matéria (nunca duas seguidas da mesma matéria, se houver mais de uma vencida), para forçar interleaving em vez de treino em bloco. Mostra também as próximas 10 revisões futuras, para o caso de nada estar vencido ainda.
+- Rodadas de fixação do mesmo dia (Camada 1, sem cronômetro) **não devem** ser registradas aqui — é uma decisão de uso (só clicar em "Registrar rodada" a partir da 2ª rodada em diante), não uma trava no código.
+- Trava prática: nenhum intervalo passa de 90 dias, mesmo com fator de facilidade alto — evita um tópico sumir da fila por um semestre inteiro em plena reta final.
+
 ### Persistência
-Todos os dados (matérias, configurações, registros de Study Log, erros, tema claro/escuro) são salvos automaticamente no **IndexedDB** do navegador — sobrevivem a fechar a aba e atualizar a página. Os dados ficam só no dispositivo/navegador onde foram criados (não sincronizam entre aparelhos).
+Todos os dados (matérias, configurações, registros de Study Log, erros, tópicos e questões de Revisão de Questões — incluindo as imagens em base64 —, tema claro/escuro) são salvos automaticamente no **IndexedDB** do navegador — sobrevivem a fechar a aba e atualizar a página. Os dados ficam só no dispositivo/navegador onde foram criados, a menos que a sincronização manual (botão de sync, com senha) seja usada — nesse caso, as imagens salvas também trafegam no payload sincronizado, então um banco de questões muito grande com muitas imagens deixa a sincronização mais pesada.
