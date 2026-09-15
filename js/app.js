@@ -331,7 +331,7 @@
     // graded one at a time when redone. See the SPACED REPETITION ENGINE
     // section below for the algorithm itself.
     topicReviews: [], // { id, subject, topic, n, EF, intervalDays, lastReviewedAt, nextReviewAt, totalRounds, history[] }
-    questionBank: [], // { id, subject, topic, statementText, imageData, createdAt, n, EF, intervalDays, lastReviewedAt, nextReviewAt, retired, history[] }
+    questionBank: [], // { id, subject, topic, statementText, imageData, answerKey, createdAt, n, EF, intervalDays, lastReviewedAt, nextReviewAt, retired, history[] }
     reviewTab: 'today', // 'today' | 'topics' | 'questions'
     questionSubTab: 'active', // 'active' | 'graduated'
     reviewFilterSubjectTopics: '',
@@ -339,6 +339,7 @@
     roundPrefillSubject: null, // pre-fills "Registrar rodada" when opened from a queue/topic card
     roundPrefillTopic: null,
     redoingQuestionId: null, // which question the "redo" modal is grading
+    answerRevealed: false, // whether the gabarito is shown in the "redo" modal (starts hidden, so you self-test first)
 
     // --- Navigation (Study Cycle is untouched; these are additive screens) ---
     screen: 'dashboard', // 'dashboard' | 'study-log' | 'error-log' | 'question-review'
@@ -559,9 +560,23 @@
     return { text: 'Frágil', cls: 'error-badge-rose' };
   }
 
+  // Diferença em DIAS DE CALENDÁRIO (meia-noite a meia-noite) entre duas
+  // datas — não em blocos fixos de 24h. Usar Math.floor((a - b) / MS_PER_DAY)
+  // direto nos timestamps era o bug: uma questão criada agora tem
+  // nextReviewAt = now, então por poucos milissegundos (o tempo até o
+  // próximo render) "now" já ficava ligeiramente no futuro e a subtração
+  // dava um número negativo pertinho de zero (ex.: -0.0000006 dia) — o
+  // Math.floor arredondava isso pra -1 e a questão nascia marcada como
+  // "Atrasada 1d" antes mesmo de existir há um segundo. Comparando só a
+  // data (ignorando a hora), hoje é sempre diffDays = 0.
+  function calendarDayDiff(targetMs, fromMs) {
+    const startOfDay = (ms) => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); };
+    return Math.round((startOfDay(targetMs) - startOfDay(fromMs)) / MS_PER_DAY);
+  }
+
   function dueBadgeHtml(nextReviewAt) {
     if (!nextReviewAt) return '';
-    const diffDays = Math.floor((nextReviewAt - Date.now()) / MS_PER_DAY);
+    const diffDays = calendarDayDiff(nextReviewAt, Date.now());
     if (diffDays < 0) return `<span class="due-badge due-badge-overdue">${ICONS.flame}Atrasada ${Math.abs(diffDays)}d</span>`;
     if (diffDays === 0) return `<span class="due-badge due-badge-today">${ICONS.flame}Hoje</span>`;
     return `<span class="due-badge due-badge-upcoming">${ICONS.clock}Em ${diffDays}d</span>`;
@@ -2090,6 +2105,10 @@
             </label>
           </div>
         </div>
+        <div class="field">
+          <label for="input-question-answer">Gabarito (opcional)</label>
+          <input id="input-question-answer" class="text-input font-medium" type="text" placeholder="ex: C, 42, Verdadeiro" maxlength="200">
+        </div>
         <div id="question-error"></div>
         <div class="modal-form-actions">
           <button type="button" class="btn-secondary-block" data-action="close-modal">Cancelar</button>
@@ -2155,10 +2174,11 @@
       const subject = subjectSelect.value || '';
       const topic = topicInput.value.trim();
       const statementText = statementInput.value.trim();
+      const answerKey = document.getElementById('input-question-answer').value.trim();
       if (!statementText && !imageData) return;
       const now = Date.now();
       const fresh = {
-        id: uid(), subject, topic, statementText, imageData,
+        id: uid(), subject, topic, statementText, imageData, answerKey,
         createdAt: now, n: 0, EF: 2.5, intervalDays: 0,
         lastReviewedAt: null, nextReviewAt: now, retired: false, history: [],
       };
@@ -2177,8 +2197,14 @@
         ${q.statementText ? `<p>${esc(q.statementText)}</p>` : ''}
         ${(q.subject || q.topic) ? `<p class="field-help">${esc([q.subject, q.topic].filter(Boolean).join(' · '))}</p>` : ''}
       </div>`;
+    const answerBlock = q.answerKey ? (
+      state.answerRevealed
+        ? `<div class="review-answer-key"><span class="review-answer-key-label">Gabarito</span><span class="review-answer-key-value">${esc(q.answerKey)}</span></div>`
+        : `<button type="button" class="btn-chip" data-action="toggle-answer-reveal" style="margin-bottom:1rem">${ICONS.eye.replace('class="icon"', 'class="icon icon-sm"')}Ver gabarito</button>`
+    ) : '';
     const body = `
       ${preview}
+      ${answerBlock}
       <p class="field-help" style="margin-bottom:0.5rem">Como foi dessa vez?</p>
       <div class="quality-buttons">
         <button type="button" class="quality-btn quality-btn-wrong" data-action="grade-question" data-id="${q.id}" data-result="wrong">${ICONS.x}Errei</button>
@@ -2321,7 +2347,12 @@
         break;
       case 'open-redo-question':
         state.redoingQuestionId = target.getAttribute('data-id');
+        state.answerRevealed = false; // esconde o gabarito de novo a cada nova rodada, pra forçar o autoteste antes
         state.activeModal = 'redo-question';
+        render();
+        break;
+      case 'toggle-answer-reveal':
+        state.answerRevealed = true;
         render();
         break;
       case 'grade-question': {

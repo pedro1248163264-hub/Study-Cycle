@@ -2,6 +2,26 @@
 
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
+## [v6] — Correção: questão nova nascendo "atrasada" + gabarito nas questões salvas
+
+### Contexto
+Dois problemas relatados na aba "Revisão de Questões": (1) toda questão nova salva já aparecia com o badge "Atrasada 1d", como se já estivesse vencida antes mesmo de existir; (2) não havia onde guardar a resposta correta de uma questão salva, então não dava pra se autotestar de verdade antes de refazer.
+
+### Corrigido
+- **Bug do badge "Atrasada 1d" no nascimento**: `dueBadgeHtml` calculava dias vencidos com `Math.floor((nextReviewAt - Date.now()) / MS_PER_DAY)` usando os timestamps exatos (com hora, minuto, segundo, milissegundo). Uma questão recém-criada nasce com `nextReviewAt = now` (o exato instante da criação); no próximo render, alguns milissegundos já tinham passado, então `nextReviewAt - Date.now()` virava um número negativo pertinho de zero — e `Math.floor` de um negativo pertinho de zero arredonda pra `-1`, não pra `0`. Resultado: "Atrasada 1d" instantaneamente. Troquei por `calendarDayDiff`, que compara só a data (zera a hora dos dois lados antes de subtrair) — agora qualquer coisa vencendo hoje mostra "Hoje", não importa a hora exata. Afeta igualmente tópicos e questões, já que os dois usam a mesma função de badge.
+
+### Adicionado
+- **Campo "Gabarito" ao salvar uma questão** — campo de texto livre (aceita letra, número, frase curta etc.), opcional, ao lado de enunciado/imagem no modal "Salvar questão".
+- **Botão "Ver gabarito" no modal "Refazer questão"** — só aparece se a questão tiver gabarito salvo, e começa escondido a cada rodada nova (pra forçar tentar responder antes de espiar), com toque pra revelar.
+
+### Não incluído (escopo desta versão)
+- Editar o gabarito de uma questão já salva (mesma limitação que já existia para os outros campos — só dá pra excluir e recriar).
+
+### Arquivos alterados
+`js/app.js` (`calendarDayDiff` + `dueBadgeHtml`, campo `answerKey` no modal de adicionar questão, bloco de revelar gabarito no modal de refazer, novo `state.answerRevealed` + ação `toggle-answer-reveal`), `css/styles.css` (`.review-answer-key`), `js/icons.js` (`eye`), `sw.js` (v5 → v6).
+
+---
+
 ## [v5] — Revisão de Questões: motor de repetição espaçada (SM-2)
 
 ### Contexto

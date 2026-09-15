@@ -1545,6 +1545,31 @@ html.dark .error-badge-green { background-color: rgba(6, 95, 70, 0.25); color: #
   white-space: pre-wrap;
 }
 
+/* gabarito (correct answer) shown in the "redo" modal, hidden until revealed */
+.review-answer-key {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background-color: var(--accent);
+}
+.review-answer-key-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--accent-foreground);
+}
+.review-answer-key-value {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--foreground);
+  word-break: break-word;
+}
+
 /* =========================
    REDUCED MOTION
    ========================= */
