@@ -172,7 +172,7 @@
         // Remote is newer — pull it down and apply to local state/IndexedDB.
         const rd = remote.data || {};
         if (Array.isArray(rd.subjects)) state.subjects = rd.subjects;
-        if (rd.settings) state.settings = rd.settings;
+        if (rd.settings) state.settings = Object.assign({}, INITIAL_SETTINGS, rd.settings);
         if (typeof rd.studyCounter === 'number') state.studyCounter = rd.studyCounter;
         if (Array.isArray(rd.studyLogs)) state.studyLogs = rd.studyLogs;
         if (Array.isArray(rd.errorLogs)) state.errorLogs = rd.errorLogs;
@@ -260,6 +260,15 @@
   const INITIAL_SETTINGS = {
     weeklyHours: 0,
     minHoursPerSubject: 1,
+    // Quantas horas seguidas de uma mesma matéria o ciclo tenta manter
+    // antes de trocar para outra. 1 = comportamento clássico (nunca
+    // repete a matéria no bloco seguinte, a não ser que seja forçado).
+    streakHours: 1,
+    // Regra opcional de diversidade: dentro de uma faixa de `windowHours`
+    // horas seguidas, no máximo `maxSubjectsPerWindow` matérias distintas
+    // podem aparecer. 0 em qualquer um dos dois desativa a regra.
+    windowHours: 0,
+    maxSubjectsPerWindow: 0,
   };
 
   const STUDY_CATEGORIES = ['Book', 'Video', 'Question'];
@@ -395,13 +404,32 @@
     });
   }
 
-  // Builds the suggested study order: always the subject with the most
-  // hours left, never the same subject twice in a row (unless it's the
-  // only one with hours left). When two or more subjects are tied on
-  // hours remaining, the one that has gone longest without being
-  // studied in real life wins the tie — not just whichever happens to
-  // be first in the list.
-  function generateSequence(allocatedSubjects) {
+  // Builds the suggested study order: at each new "block", picks the
+  // subject with the most hours left (ties go to whoever's gone longest
+  // without being studied in real life), and then sticks with that same
+  // subject for up to `streakHours` hours in a row before switching —
+  // never repeating a subject right after its own block finishes, unless
+  // it's the only one left with hours remaining. With streakHours = 1
+  // this is exactly the old behaviour: never the same subject twice in a
+  // row.
+  //
+  // Optionally, a diversity rule can also apply: within any window of
+  // `windowHours` consecutive hours, at most `maxSubjectsPerWindow`
+  // distinct subjects may appear (e.g. "only 2 different subjects within
+  // any 6-hour stretch"). Both settings are 0/disabled unless the user
+  // has turned this on. The window rule is treated as a hard constraint
+  // and wins over the "switch subjects" preference. It can still be
+  // impossible to fully honor right at a transition — e.g. if two
+  // subjects happen to run out of hours at the same time — in which
+  // case the cycle falls back to picking a different subject anyway so
+  // it can keep making progress, and self-corrects a few hours later.
+  function generateSequence(allocatedSubjects, settings) {
+    settings = settings || {};
+    const streakHours = Math.max(1, parseInt(settings.streakHours, 10) || 1);
+    const windowHours = Math.max(0, parseInt(settings.windowHours, 10) || 0);
+    const maxSubjectsPerWindow = Math.max(0, parseInt(settings.maxSubjectsPerWindow, 10) || 0);
+    const windowRuleActive = windowHours > 1 && maxSubjectsPerWindow > 0;
+
     const sequence = [];
     const pools = allocatedSubjects.map(s => ({
       id: s.id,
@@ -413,21 +441,58 @@
       recency: s.lastStudiedAt || 0,
     }));
 
+    // Would adding `id` as a new block right now keep the last
+    // `windowHours` hours (this candidate hour included) within the
+    // distinct-subject limit? Continuing the subject already in progress
+    // never adds a new distinct subject, so this is only ever checked
+    // when starting a fresh block.
+    function passesWindowRule(id) {
+      if (!windowRuleActive) return true;
+      const recentIds = sequence.slice(-(windowHours - 1)).map(item => item.id);
+      const distinct = new Set(recentIds);
+      if (distinct.has(id)) return true;
+      return distinct.size < maxSubjectsPerWindow;
+    }
+
     let lastPickedId = null;
+    let streakLeft = 0; // hours left to keep studying lastPickedId
     // Local clock for this simulated run: once a subject is picked here,
     // it's treated as "just studied" for tie-breaking the rest of this
     // same sequence, without touching the subject's real recency data.
     let simClock = pools.reduce((max, p) => Math.max(max, p.recency), 0);
 
     while (pools.some(p => p.remaining > 0)) {
-      pools.sort((a, b) => {
-        if (b.remaining !== a.remaining) return b.remaining - a.remaining;
-        return a.recency - b.recency; // tie: longest-waiting subject goes first
-      });
+      let candidate = null;
 
-      let candidate = pools.find(p => p.id !== lastPickedId && p.remaining > 0);
+      // Keep going with the current block's subject, if it still has
+      // hours left and hasn't finished its streak yet.
+      if (streakLeft > 0 && lastPickedId !== null) {
+        const current = pools.find(p => p.id === lastPickedId && p.remaining > 0);
+        if (current) candidate = current;
+      }
+
       if (!candidate) {
-        candidate = pools.find(p => p.remaining > 0);
+        pools.sort((a, b) => {
+          if (b.remaining !== a.remaining) return b.remaining - a.remaining;
+          return a.recency - b.recency; // tie: longest-waiting subject goes first
+        });
+        const available = pools.filter(p => p.remaining > 0);
+
+        // Preference order: a different subject that also satisfies the
+        // window rule (the ideal case) > any subject, possibly even the
+        // one just finished, that at least keeps the window rule intact
+        // (the window rule is a hard user constraint, so it outranks the
+        // "switch subjects" preference) > a different subject regardless
+        // of the window rule (variety wins if the window rule genuinely
+        // can't be satisfied by anyone) > whatever's left, as a last
+        // resort.
+        candidate = available.find(p => p.id !== lastPickedId && passesWindowRule(p.id))
+          || available.find(p => passesWindowRule(p.id))
+          || available.find(p => p.id !== lastPickedId)
+          || available[0]
+          || null;
+
+        streakLeft = streakHours; // fresh block starts now
       }
 
       if (candidate) {
@@ -436,6 +501,9 @@
         simClock += 1;
         candidate.recency = simClock;
         lastPickedId = candidate.id;
+        streakLeft -= 1;
+      } else {
+        break; // safety net; shouldn't happen while some pool still has hours
       }
     }
 
@@ -614,7 +682,7 @@
   // ---------- DERIVED STATE ----------
   function getDerived() {
     const allocatedSubjects = calculateAllocations(state.subjects, state.settings);
-    const sequence = generateSequence(allocatedSubjects);
+    const sequence = generateSequence(allocatedSubjects, state.settings);
     const totalAllocated = allocatedSubjects.reduce((sum, s) => sum + s.allocated, 0);
     const totalCompleted = state.subjects.reduce((sum, s) => sum + s.completedHours, 0);
     const overallProgress = totalAllocated > 0 ? Math.min(100, Math.round((totalCompleted / totalAllocated) * 100)) : 0;
@@ -968,6 +1036,21 @@
           <label for="input-min-hours">Mínimo de horas por matéria</label>
           <input id="input-min-hours" class="text-input" type="number" min="1" max="20" value="${s.minHoursPerSubject}">
         </div>
+        <div class="field">
+          <label for="input-streak">Horas seguidas por matéria</label>
+          <input id="input-streak" class="text-input" type="number" min="1" max="12" value="${s.streakHours}">
+          <p class="field-help">Quantas horas seguidas o ciclo tenta manter na mesma matéria antes de trocar. Use 1 para nunca repetir a matéria em seguida.</p>
+        </div>
+        <div class="field">
+          <label for="input-window-hours">Faixa de horas (diversidade)</label>
+          <input id="input-window-hours" class="text-input" type="number" min="0" max="48" value="${s.windowHours}">
+          <p class="field-help">Opcional. Dentro de uma faixa de X horas seguidas, limita quantas matérias diferentes podem aparecer. Deixe 0 para desativar.</p>
+        </div>
+        <div class="field">
+          <label for="input-max-subjects-window">Máx. de matérias diferentes na faixa</label>
+          <input id="input-max-subjects-window" class="text-input" type="number" min="0" max="20" value="${s.maxSubjectsPerWindow}">
+          <p class="field-help">Ex.: faixa de 6 horas com no máximo 2 matérias diferentes. Deixe 0 para desativar.</p>
+        </div>
         <div id="settings-error"></div>
         <button type="button" id="settings-save-btn" class="btn-primary-block settings-save">Salvar configurações</button>
       </div>`;
@@ -977,6 +1060,9 @@
   function wireSettingsModal() {
     const weeklyInput = document.getElementById('input-weekly');
     const minInput = document.getElementById('input-min-hours');
+    const streakInput = document.getElementById('input-streak');
+    const windowInput = document.getElementById('input-window-hours');
+    const maxSubjectsInput = document.getElementById('input-max-subjects-window');
     const errorBox = document.getElementById('settings-error');
     const saveBtn = document.getElementById('settings-save-btn');
     const subjectsCount = state.subjects.length;
@@ -984,27 +1070,56 @@
     function refresh() {
       const weekly = parseInt(weeklyInput.value, 10) || 0;
       const minHours = parseInt(minInput.value, 10) || 0;
+      const streak = parseInt(streakInput.value, 10) || 0;
+      const windowHours = parseInt(windowInput.value, 10) || 0;
+      const maxSubjects = parseInt(maxSubjectsInput.value, 10) || 0;
       const totalMin = subjectsCount * minHours;
-      const hasError = totalMin > weekly;
 
-      errorBox.innerHTML = hasError ? `
+      const errors = [];
+      if (totalMin > weekly) {
+        errors.push(`Com ${subjectsCount} matérias e um mínimo de ${minHours}h cada, você precisa de pelo menos ${totalMin}h. Aumente o total de horas semanais ou diminua o mínimo.`);
+      }
+      if (streak < 1) {
+        errors.push('Horas seguidas por matéria precisa ser pelo menos 1.');
+      }
+      if ((windowHours > 0) !== (maxSubjects > 0)) {
+        errors.push('Para usar a regra de diversidade, preencha tanto a faixa de horas quanto o número máximo de matérias (ou deixe as duas em 0 para desativar).');
+      } else if (windowHours > 0 && windowHours <= streak) {
+        errors.push('A faixa de horas precisa ser maior que as horas seguidas por matéria para fazer diferença.');
+      }
+
+      errorBox.innerHTML = errors.length ? `
         <div class="error-box">
           ${ICONS.alertCircle}
-          <p>Com ${subjectsCount} matérias e um mínimo de ${minHours}h cada, você precisa de pelo menos ${totalMin}h. Aumente o total de horas semanais ou diminua o mínimo.</p>
+          <p>${errors.join(' ')}</p>
         </div>` : '';
 
-      saveBtn.disabled = hasError;
+      saveBtn.disabled = errors.length > 0;
     }
 
     weeklyInput.addEventListener('input', refresh);
     minInput.addEventListener('input', refresh);
+    streakInput.addEventListener('input', refresh);
+    windowInput.addEventListener('input', refresh);
+    maxSubjectsInput.addEventListener('input', refresh);
     refresh();
 
     saveBtn.addEventListener('click', () => {
       const weekly = parseInt(weeklyInput.value, 10) || 0;
       const minHours = parseInt(minInput.value, 10) || 0;
+      const streak = parseInt(streakInput.value, 10) || 1;
+      const windowHours = parseInt(windowInput.value, 10) || 0;
+      const maxSubjects = parseInt(maxSubjectsInput.value, 10) || 0;
       if (subjectsCount * minHours > weekly) return;
-      state.settings = { weeklyHours: weekly, minHoursPerSubject: minHours };
+      if (streak < 1) return;
+      if ((windowHours > 0) !== (maxSubjects > 0)) return;
+      state.settings = {
+        weeklyHours: weekly,
+        minHoursPerSubject: minHours,
+        streakHours: streak,
+        windowHours: windowHours,
+        maxSubjectsPerWindow: maxSubjects,
+      };
       state.activeModal = null;
       saveState(state);
       render();
@@ -2436,7 +2551,7 @@
   loadState().then(saved => {
     if (saved) {
       if (Array.isArray(saved.subjects)) state.subjects = saved.subjects;
-      if (saved.settings) state.settings = saved.settings;
+      if (saved.settings) state.settings = Object.assign({}, INITIAL_SETTINGS, saved.settings);
       if (typeof saved.studyCounter === 'number') state.studyCounter = saved.studyCounter;
       if (Array.isArray(saved.studyLogs)) state.studyLogs = saved.studyLogs;
       if (Array.isArray(saved.errorLogs)) state.errorLogs = saved.errorLogs;
