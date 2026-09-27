@@ -340,7 +340,7 @@
     // graded one at a time when redone. See the SPACED REPETITION ENGINE
     // section below for the algorithm itself.
     topicReviews: [], // { id, subject, topic, n, EF, intervalDays, lastReviewedAt, nextReviewAt, totalRounds, history[] }
-    questionBank: [], // { id, subject, topic, statementText, imageData, answerKey, createdAt, n, EF, intervalDays, lastReviewedAt, nextReviewAt, retired, history[] }
+    questionBank: [], // { id, subject, topic, statementText, imageData, answerKey, resolutionText, resolutionImageData, createdAt, n, EF, intervalDays, lastReviewedAt, nextReviewAt, retired, history[] }
     reviewTab: 'today', // 'today' | 'topics' | 'questions'
     questionSubTab: 'active', // 'active' | 'graduated'
     reviewFilterSubjectTopics: '',
@@ -349,6 +349,7 @@
     roundPrefillTopic: null,
     redoingQuestionId: null, // which question the "redo" modal is grading
     answerRevealed: false, // whether the gabarito is shown in the "redo" modal (starts hidden, so you self-test first)
+    resolutionRevealed: false, // whether the resolução is shown in the "redo" modal (starts hidden, so you self-test first)
 
     // --- Navigation (Study Cycle is untouched; these are additive screens) ---
     screen: 'dashboard', // 'dashboard' | 'study-log' | 'error-log' | 'question-review'
@@ -541,7 +542,10 @@
   function sm2Step(n, EF, prevIntervalDays, quality) {
     let interval, nextN;
     if (quality >= 3) {
-      if (n === 0) interval = 1;
+      // Nota máxima (5 = "Fácil") logo na primeira vez pula direto pra 3
+      // dias em vez de 1 — se já saiu de primeira, 1 dia é tempo demais
+      // perto pra revisar de novo. "Difícil" (3) continua com 1 dia.
+      if (n === 0) interval = quality >= 5 ? 3 : 1;
       else if (n === 1) interval = 6;
       else interval = Math.round(prevIntervalDays * EF);
       nextN = n + 1;
@@ -2224,6 +2228,20 @@
           <label for="input-question-answer">Gabarito (opcional)</label>
           <input id="input-question-answer" class="text-input font-medium" type="text" placeholder="ex: C, 42, Verdadeiro" maxlength="200">
         </div>
+        <div class="field">
+          <label for="input-question-resolution-text">Resolução (opcional, texto)</label>
+          <textarea id="input-question-resolution-text" class="textarea-input" rows="4" placeholder="Explique o passo a passo da resolução, se quiser"></textarea>
+        </div>
+        <div class="field">
+          <label>Resolução (opcional, imagem)</label>
+          <div id="resolution-image-area">
+            <label class="image-drop" id="resolution-image-drop">
+              ${ICONS.image}
+              <span>Toque para escolher uma foto/print da resolução</span>
+              <input type="file" id="input-resolution-image" accept="image/*">
+            </label>
+          </div>
+        </div>
         <div id="question-error"></div>
         <div class="modal-form-actions">
           <button type="button" class="btn-secondary-block" data-action="close-modal">Cancelar</button>
@@ -2238,9 +2256,11 @@
     const topicInput = document.getElementById('input-question-topic');
     const statementInput = document.getElementById('input-question-statement');
     const imageArea = document.getElementById('question-image-area');
+    const resolutionImageArea = document.getElementById('resolution-image-area');
     const errorBox = document.getElementById('question-error');
     const saveBtn = document.getElementById('question-save-btn');
     let imageData = null;
+    let resolutionImageData = null;
 
     function refresh() {
       saveBtn.disabled = !(statementInput.value.trim().length > 0 || !!imageData);
@@ -2281,7 +2301,43 @@
       wireFileInput();
     }
 
+    // Segundo drop de imagem, independente do da questão (mesmo padrão,
+    // outro alvo) — é a foto/print da resolução, opcional.
+    function wireResolutionFileInput() {
+      const input = document.getElementById('input-resolution-image');
+      input.addEventListener('change', () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        errorBox.innerHTML = '';
+        resizeImageFile(file, 1000, 0.75).then((dataUrl) => {
+          resolutionImageData = dataUrl;
+          resolutionImageArea.innerHTML = `
+            <div class="image-preview-wrap">
+              <img src="${resolutionImageData}" alt="">
+              <button type="button" class="image-preview-remove" id="resolution-image-remove">${ICONS.x}</button>
+            </div>`;
+          document.getElementById('resolution-image-remove').addEventListener('click', () => {
+            resolutionImageData = null;
+            restoreResolutionDropzone();
+          });
+        }).catch(() => {
+          errorBox.innerHTML = `<div class="error-box">${ICONS.alertCircle}<p>Não consegui ler essa imagem. Tente outra.</p></div>`;
+        });
+      });
+    }
+
+    function restoreResolutionDropzone() {
+      resolutionImageArea.innerHTML = `
+        <label class="image-drop" id="resolution-image-drop">
+          ${ICONS.image}
+          <span>Toque para escolher uma foto/print da resolução</span>
+          <input type="file" id="input-resolution-image" accept="image/*">
+        </label>`;
+      wireResolutionFileInput();
+    }
+
     wireFileInput();
+    wireResolutionFileInput();
     statementInput.addEventListener('input', refresh);
     refresh();
 
@@ -2290,10 +2346,12 @@
       const topic = topicInput.value.trim();
       const statementText = statementInput.value.trim();
       const answerKey = document.getElementById('input-question-answer').value.trim();
+      const resolutionText = document.getElementById('input-question-resolution-text').value.trim();
       if (!statementText && !imageData) return;
       const now = Date.now();
       const fresh = {
         id: uid(), subject, topic, statementText, imageData, answerKey,
+        resolutionText, resolutionImageData,
         createdAt: now, n: 0, EF: 2.5, intervalDays: 0,
         lastReviewedAt: null, nextReviewAt: now, retired: false, history: [],
       };
@@ -2317,9 +2375,20 @@
         ? `<div class="review-answer-key"><span class="review-answer-key-label">Gabarito</span><span class="review-answer-key-value">${esc(q.answerKey)}</span></div>`
         : `<button type="button" class="btn-chip" data-action="toggle-answer-reveal" style="margin-bottom:1rem">${ICONS.eye.replace('class="icon"', 'class="icon icon-sm"')}Ver gabarito</button>`
     ) : '';
+    const hasResolution = !!(q.resolutionText || q.resolutionImageData);
+    const resolutionBlock = hasResolution ? (
+      state.resolutionRevealed
+        ? `<div class="review-resolution">
+             <span class="review-answer-key-label">Resolução</span>
+             ${q.resolutionImageData ? `<img src="${q.resolutionImageData}" alt="">` : ''}
+             ${q.resolutionText ? `<p>${esc(q.resolutionText)}</p>` : ''}
+           </div>`
+        : `<button type="button" class="btn-chip" data-action="toggle-resolution-reveal" style="margin-bottom:1rem">${ICONS.eye.replace('class="icon"', 'class="icon icon-sm"')}Ver resolução</button>`
+    ) : '';
     const body = `
       ${preview}
       ${answerBlock}
+      ${resolutionBlock}
       <p class="field-help" style="margin-bottom:0.5rem">Como foi dessa vez?</p>
       <div class="quality-buttons">
         <button type="button" class="quality-btn quality-btn-wrong" data-action="grade-question" data-id="${q.id}" data-result="wrong">${ICONS.x}Errei</button>
@@ -2463,11 +2532,16 @@
       case 'open-redo-question':
         state.redoingQuestionId = target.getAttribute('data-id');
         state.answerRevealed = false; // esconde o gabarito de novo a cada nova rodada, pra forçar o autoteste antes
+        state.resolutionRevealed = false; // idem para a resolução
         state.activeModal = 'redo-question';
         render();
         break;
       case 'toggle-answer-reveal':
         state.answerRevealed = true;
+        render();
+        break;
+      case 'toggle-resolution-reveal':
+        state.resolutionRevealed = true;
         render();
         break;
       case 'grade-question': {

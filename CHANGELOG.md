@@ -2,6 +2,26 @@
 
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
+## [v10] — Resolução (imagem/texto) nas questões salvas + intervalo inicial maior pra "Fácil"
+
+### Contexto
+Faltava um jeito de guardar *como* resolver uma questão salva (só existia o gabarito, ou seja, a resposta final) — útil pra questões de matérias como exatas, onde o caminho importa mais que a resposta. Além disso, no motor SM-2, a primeira vez que uma questão nova era refeita e marcada como "Fácil" recebia o mesmo intervalo (1 dia) que "Difícil" — não fazia sentido tratar igual algo que já saiu de primeira tentativa sem esforço.
+
+### Adicionado
+- **Campo "Resolução" ao salvar uma questão**, em texto e/ou imagem (mesmo padrão de upload/preview já usado para a imagem do enunciado), ambos opcionais e independentes do gabarito.
+- **Botão "Ver resolução" no modal "Refazer questão"** — só aparece se a questão tiver resolução salva (texto e/ou imagem), começa escondida a cada rodada nova (mesmo comportamento do "Ver gabarito", pra forçar a tentativa antes de espiar).
+
+### Alterado
+- **`sm2Step`**: quando uma questão/tópico é avaliado com nota máxima (5 = "Fácil" no motor de Questão) logo na primeira rodada (`n === 0`), o próximo intervalo passa a ser **3 dias** em vez de 1. "Difícil" (nota 3) continua com 1 dia, e uma resposta errada continua reiniciando para 1 dia. Afeta os dois motores (Tópico e Questão), já que compartilham a mesma função.
+
+### Não incluído (escopo desta versão)
+- Editar a resolução (ou qualquer outro campo) de uma questão já salva — mesma limitação que já existia para os demais campos.
+
+### Arquivos alterados
+`js/app.js` (`sm2Step`, campos `resolutionText`/`resolutionImageData` no modal de adicionar questão, bloco de revelar resolução no modal de refazer, novo `state.resolutionRevealed` + ação `toggle-resolution-reveal`), `css/styles.css` (`.review-resolution`), `sw.js` (v9 → v10).
+
+---
+
 ## [v6] — Correção: questão nova nascendo "atrasada" + gabarito nas questões salvas
 
 ### Contexto
