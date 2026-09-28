@@ -57,6 +57,7 @@ CHANGELOG.md              → histórico do que foi mudado e por quê
 
 ### Study Cycle
 - **Horas por matéria**: cada matéria recebe uma fatia das horas semanais proporcional a `dificuldade + conteúdo + importância`, arredondada (0,5 para cima). Se essa fatia natural ficar abaixo do "mínimo de horas por matéria" configurado, ela é aumentada até o mínimo — o que pode fazer o total passar um pouco das horas semanais digitadas, de propósito.
+- **Horas seguidas**: o app lembra do bloco em andamento (matéria + horas já feitas nele). Com blocos de 3h e 1h registrada, a sequência mostra as 2h restantes antes de trocar de matéria.
 - **Sequência sugerida**: a cada passo, sugere a matéria com mais horas restantes, evitando repetir a mesma matéria duas vezes seguidas — a menos que ela seja a única com horas restantes. Em caso de empate nas horas restantes, desempata pela matéria que está há mais tempo sem ser estudada de verdade (não pela ordem de cadastro).
 - **Registrar tempo**: soma horas (1 a 4 por vez) à matéria escolhida.
 - **Fim do ciclo**: quando o total estudado atinge o total alocado, aparece o botão "Reiniciar ciclo", que zera as horas concluídas de todas as matérias (sem apagar as matérias nem o histórico de "última vez estudada").
@@ -80,7 +81,9 @@ Motor de repetição espaçada para decidir **quando** refazer questões — nã
 - **Questões (individual)** — "Salvar questão": bookmark de uma questão específica (imagem e/ou enunciado em texto — pelo menos um dos dois é obrigatório). Imagens são redimensionadas e comprimidas no navegador (máx. 1000px, JPEG 75%) antes de virar base64, para não inflar o IndexedDB nem o payload de sincronização. Ao refazer, três botões (Errei/Difícil/Fácil) mapeiam para as notas 1/3/5 do SM-2. Depois de 4 acertos seguidos, a questão "gradua" — sai da fila ativa automaticamente (mas pode ser reativada manualmente na aba "Graduadas").
 - **Fila "Hoje"** — mistura tópicos e questões vencidos com um round-robin por matéria (nunca duas seguidas da mesma matéria, se houver mais de uma vencida), para forçar interleaving em vez de treino em bloco. Mostra também as próximas 10 revisões futuras, para o caso de nada estar vencido ainda.
 - Rodadas de fixação do mesmo dia (Camada 1, sem cronômetro) **não devem** ser registradas aqui — é uma decisão de uso (só clicar em "Registrar rodada" a partir da 2ª rodada em diante), não uma trava no código.
-- Trava prática: nenhum intervalo passa de 90 dias, mesmo com fator de facilidade alto — evita um tópico sumir da fila por um semestre inteiro em plena reta final.
+- Trava prática: nenhum intervalo passa de 365 dias, mesmo com fator de facilidade alto.
+- **Editar questão**: cada questão salva tem botão "Editar" (conteúdo apenas; o progresso de revisão é preservado).
+- **OCR**: ao anexar imagem do enunciado (ou da resolução), "Extrair texto da imagem" preenche o campo de texto para você revisar. Usa Tesseract.js carregado sob demanda; precisa de internet na 1ª vez, depois funciona offline a partir do cache.
 
 ### Persistência
 Todos os dados (matérias, configurações, registros de Study Log, erros, tópicos e questões de Revisão de Questões — incluindo as imagens em base64 —, tema claro/escuro) são salvos automaticamente no **IndexedDB** do navegador — sobrevivem a fechar a aba e atualizar a página. Os dados ficam só no dispositivo/navegador onde foram criados, a menos que a sincronização manual (botão de sync, com senha) seja usada — nesse caso, as imagens salvas também trafegam no payload sincronizado, então um banco de questões muito grande com muitas imagens deixa a sincronização mais pesada.

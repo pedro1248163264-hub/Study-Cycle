@@ -2,6 +2,26 @@
 
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
+## [v11] — Horas seguidas corrigidas, editar questão salva, OCR e teto de intervalo maior
+
+### Contexto
+Três pedidos: (1) o "horas seguidas por matéria" quebrava ao registrar tempo — o motor regenerava a sequência do zero a cada registro e não lembrava que havia um bloco em andamento; (2) faltava editar uma questão salva e economizar transcrição de enunciado; (3) o teto de 90 dias nos intervalos de revisão era curto para material de base com a prova ainda distante.
+
+### Corrigido
+- **Horas seguidas (`streakHours`)**: agora existe `state.currentBlock = { subjectId, hoursDone }`, atualizado a cada "Registrar tempo" (mesma matéria soma; matéria diferente começa um bloco novo) e zerado no "Reiniciar ciclo". `generateSequence` recebe esse bloco e o retoma: com bloco de 3h e 1h já feita, a sequência mostra as 2h que faltam antes de trocar. Bloco já fechado (horas feitas múltiplo do tamanho do bloco) não repete a mesma matéria em seguida. Persistido no IndexedDB e no sync.
+
+### Adicionado
+- **Editar questão salva**: botão "Editar" nos cards (Ativas e Graduadas). Reaproveita o modal de salvar, pré-preenchido (matéria, tópico, enunciado, imagem, gabarito, resolução em texto/imagem). Só campos de conteúdo mudam — n, EF, intervalo, histórico e data da próxima revisão não são tocados.
+- **OCR (Tesseract.js 5.1.1, português)**: botão "Extrair texto da imagem" abaixo da imagem do enunciado e da imagem da resolução; o texto entra no campo de texto correspondente para revisão (nunca é salvo direto). Usa a foto original quando disponível (melhor que a versão comprimida). Junta linhas do mesmo parágrafo e mantém quebras antes de alternativas. A biblioteca só é carregada no 1º toque; precisa de internet nessa 1ª vez e depois fica em cache (`sw.js` passou a cachear `cdn.jsdelivr.net` e `tessdata.projectnaptha.com`).
+
+### Alterado
+- **`MAX_INTERVAL_DAYS`: 90 → 365.** Só o teto mudou; a curva de crescimento do SM-2 continua a mesma (ajuste do "muito fácil, aumenta o tempo" ficou para decidir depois).
+
+### Arquivos alterados
+`js/app.js`, `css/styles.css` (`.ocr-row`, chips desabilitados, `flex-wrap` nas ações do card), `sw.js` (v10 → v11).
+
+---
+
 ## [v10] — Resolução (imagem/texto) nas questões salvas + intervalo inicial maior pra "Fácil"
 
 ### Contexto

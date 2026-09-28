@@ -10,7 +10,7 @@
    That's what forces every visitor's cache to refresh.
    ========================================================= */
 
-const CACHE_VERSION = 'v10';
+const CACHE_VERSION = 'v11';
 const CACHE_NAME = `study-cycle-${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [
@@ -28,6 +28,10 @@ const PRECACHE_URLS = [
 const RUNTIME_CACHEABLE_ORIGINS = [
   'https://fonts.googleapis.com',
   'https://fonts.gstatic.com',
+  // OCR (Tesseract.js): script, núcleo wasm e idioma português. Ficam em
+  // cache depois do 1º uso, pra o OCR funcionar offline.
+  'https://cdn.jsdelivr.net',
+  'https://tessdata.projectnaptha.com',
 ];
 
 self.addEventListener('install', (event) => {

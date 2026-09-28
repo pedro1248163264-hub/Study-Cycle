@@ -41,6 +41,7 @@
       subjects: s.subjects,
       settings: s.settings,
       studyCounter: s.studyCounter,
+      currentBlock: s.currentBlock || null,
       studyLogs: s.studyLogs,
       errorLogs: s.errorLogs,
       topicReviews: s.topicReviews,
@@ -174,6 +175,7 @@
         if (Array.isArray(rd.subjects)) state.subjects = rd.subjects;
         if (rd.settings) state.settings = Object.assign({}, INITIAL_SETTINGS, rd.settings);
         if (typeof rd.studyCounter === 'number') state.studyCounter = rd.studyCounter;
+        state.currentBlock = rd.currentBlock || null;
         if (Array.isArray(rd.studyLogs)) state.studyLogs = rd.studyLogs;
         if (Array.isArray(rd.errorLogs)) state.errorLogs = rd.errorLogs;
         if (Array.isArray(rd.topicReviews)) state.topicReviews = rd.topicReviews;
@@ -310,6 +312,10 @@
     // remembers the counter value from its most recent log, so ties in
     // "hours remaining" can be broken by real recency (see generateSequence).
     studyCounter: 0,
+    // Bloco de horas seguidas em andamento (na vida real): qual matéria e
+    // quantas horas já foram feitas nele. É isso que permite o motor saber
+    // que "faltam 2h para fechar o bloco de 3h" depois de registrar 1h.
+    currentBlock: null, // { subjectId, hoursDone } | null
     activeModal: null,
     editingSubjectId: null,
     isDark: false,
@@ -348,6 +354,7 @@
     roundPrefillSubject: null, // pre-fills "Registrar rodada" when opened from a queue/topic card
     roundPrefillTopic: null,
     redoingQuestionId: null, // which question the "redo" modal is grading
+    editingQuestionId: null, // which saved question the "edit" modal is changing
     answerRevealed: false, // whether the gabarito is shown in the "redo" modal (starts hidden, so you self-test first)
     resolutionRevealed: false, // whether the resolução is shown in the "redo" modal (starts hidden, so you self-test first)
 
@@ -424,7 +431,7 @@
   // subjects happen to run out of hours at the same time — in which
   // case the cycle falls back to picking a different subject anyway so
   // it can keep making progress, and self-corrects a few hours later.
-  function generateSequence(allocatedSubjects, settings) {
+  function generateSequence(allocatedSubjects, settings, currentBlock) {
     settings = settings || {};
     const streakHours = Math.max(1, parseInt(settings.streakHours, 10) || 1);
     const windowHours = Math.max(0, parseInt(settings.windowHours, 10) || 0);
@@ -457,6 +464,16 @@
 
     let lastPickedId = null;
     let streakLeft = 0; // hours left to keep studying lastPickedId
+    // Retoma o bloco que já está em andamento na vida real: se você já
+    // fez 1h de um bloco de 3h, sobram 2h dele antes de trocar de matéria.
+    // Se o bloco já fechou (horas feitas múltiplo do tamanho do bloco),
+    // streakLeft fica 0, mas a matéria continua marcada como "última"
+    // pra não ser repetida logo em seguida.
+    if (currentBlock && pools.some(p => p.id === currentBlock.subjectId)) {
+      lastPickedId = currentBlock.subjectId;
+      const doneInBlock = (parseInt(currentBlock.hoursDone, 10) || 0) % streakHours;
+      streakLeft = doneInBlock > 0 ? streakHours - doneInBlock : 0;
+    }
     // Local clock for this simulated run: once a subject is picked here,
     // it's treated as "just studied" for tie-breaking the rest of this
     // same sequence, without touching the subject's real recency data.
@@ -534,7 +551,7 @@
   // dia não prediz retenção real. Isso é decisão de uso, não travado no
   // código (é só não clicar em "Registrar rodada" na fixação do dia 1).
   const MS_PER_DAY = 24 * 60 * 60 * 1000;
-  const MAX_INTERVAL_DAYS = 90; // trava prática: nunca deixa algo sumir por >~3 meses num ciclo ativo de vestibular
+  const MAX_INTERVAL_DAYS = 365; // trava de segurança: nada some por mais de 1 ano (era 90; curto demais pra material de base com a prova ainda longe)
   const GRADUATE_AFTER_N = 4;   // nº de acertos seguidos até uma questão "graduar" e sair da fila ativa
   const REDO_QUALITY = { wrong: 1, hard: 3, easy: 5 };
 
@@ -686,7 +703,7 @@
   // ---------- DERIVED STATE ----------
   function getDerived() {
     const allocatedSubjects = calculateAllocations(state.subjects, state.settings);
-    const sequence = generateSequence(allocatedSubjects, state.settings);
+    const sequence = generateSequence(allocatedSubjects, state.settings, state.currentBlock);
     const totalAllocated = allocatedSubjects.reduce((sum, s) => sum + s.allocated, 0);
     const totalCompleted = state.subjects.reduce((sum, s) => sum + s.completedHours, 0);
     const overallProgress = totalAllocated > 0 ? Math.min(100, Math.round((totalCompleted / totalAllocated) * 100)) : 0;
@@ -924,9 +941,13 @@
       return;
     }
 
-    if (state.activeModal === 'add-question') {
-      root.innerHTML = modalQuestionHtml();
-      wireQuestionModal();
+    if (state.activeModal === 'add-question' || state.activeModal === 'edit-question') {
+      const editingQ = state.activeModal === 'edit-question'
+        ? state.questionBank.find(qq => qq.id === state.editingQuestionId)
+        : null;
+      if (state.activeModal === 'edit-question' && !editingQ) { root.innerHTML = ''; return; }
+      root.innerHTML = modalQuestionHtml(editingQ);
+      wireQuestionModal(editingQ);
       return;
     }
 
@@ -1284,6 +1305,10 @@
       if (!subjectId) return;
       state.studyCounter += 1;
       const stamp = state.studyCounter;
+      const prevBlock = state.currentBlock;
+      state.currentBlock = (prevBlock && prevBlock.subjectId === subjectId)
+        ? { subjectId, hoursDone: (prevBlock.hoursDone || 0) + hours }
+        : { subjectId, hoursDone: hours };
       state.subjects = state.subjects.map(s => s.id === subjectId
         ? Object.assign({}, s, { completedHours: s.completedHours + hours, lastStudiedAt: stamp })
         : s);
@@ -1993,6 +2018,7 @@
             ${q.statementText ? `<p class="log-card-detail">${esc(q.statementText.slice(0, 90))}${q.statementText.length > 90 ? '…' : ''}</p>` : ''}
           </div>
           <div class="log-card-actions">
+            <button type="button" class="btn-chip" data-action="edit-question" data-id="${q.id}">${ICONS.edit.replace('class="icon"', 'class="icon icon-sm"')}Editar</button>
             ${state.questionSubTab === 'active'
               ? `<button type="button" class="btn-chip" data-action="open-redo-question" data-id="${q.id}">${ICONS.repeat.replace('class="icon"', 'class="icon icon-sm"')}Refazer</button>`
               : `<button type="button" class="btn-chip" data-action="revive-question" data-id="${q.id}">${ICONS.rotateCcw.replace('class="icon"', 'class="icon icon-sm"')}Reativar</button>`}
@@ -2190,10 +2216,106 @@
     });
   }
 
-  // --- Add question modal (bookmark a question to redo later, image and/or text) ---
-  function modalQuestionHtml() {
+  // ---------- OCR (extrair texto de print/foto) ----------
+  // Tesseract.js roda 100% no navegador (sem servidor). É carregado só
+  // quando você toca em "Extrair texto" pela primeira vez — não pesa no
+  // carregamento normal do app. Na 1ª vez precisa de internet (baixa o
+  // leitor + o idioma português); depois fica em cache (Service Worker +
+  // cache próprio do Tesseract) e funciona offline.
+  const TESSERACT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+  let tesseractLoading = null;
+  let ocrWorkerPromise = null;
+  let ocrProgressCb = null;
+
+  function loadTesseract() {
+    if (window.Tesseract) return Promise.resolve(window.Tesseract);
+    if (!tesseractLoading) {
+      tesseractLoading = new Promise((resolve, reject) => {
+        const el = document.createElement('script');
+        el.src = TESSERACT_URL;
+        el.onload = () => resolve(window.Tesseract);
+        el.onerror = () => { tesseractLoading = null; reject(new Error('load-failed')); };
+        document.head.appendChild(el);
+      });
+    }
+    return tesseractLoading;
+  }
+
+  function getOcrWorker() {
+    if (!ocrWorkerPromise) {
+      ocrWorkerPromise = loadTesseract().then(T => T.createWorker('por', 1, {
+        logger: (m) => { if (ocrProgressCb) ocrProgressCb(m); },
+      }));
+      ocrWorkerPromise.catch(() => { ocrWorkerPromise = null; });
+    }
+    return ocrWorkerPromise;
+  }
+
+  // Aceita File (foto original, melhor qualidade) ou data URL (imagem já
+  // salva). Devolve um canvas ampliado se pequeno / reduzido se enorme —
+  // o OCR lê melhor texto com ~1000-2000px de lado maior.
+  function imageToOcrCanvas(source) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      let objUrl = null;
+      img.onload = () => {
+        const longSide = Math.max(img.width, img.height);
+        const scale = longSide > 2000 ? 2000 / longSide : (longSide < 1000 ? 2 : 1);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext('2d');
+        ctx.filter = 'grayscale(1) contrast(1.15)'; // ignorado onde não houver suporte
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        if (objUrl) URL.revokeObjectURL(objUrl);
+        resolve(canvas);
+      };
+      img.onerror = reject;
+      if (typeof source === 'string') img.src = source;
+      else { objUrl = URL.createObjectURL(source); img.src = objUrl; }
+    });
+  }
+
+  // O OCR devolve uma linha por linha visual da imagem. Junta as linhas
+  // que são só continuação do mesmo parágrafo, mas mantém quebra antes de
+  // alternativas (a) b) c) ..., itens de lista e depois de pontuação final.
+  function cleanOcrText(raw) {
+    const lines = String(raw || '').replace(/\r/g, '').split('\n').map(l => l.replace(/\s+$/g, ''));
+    const out = [];
+    const optionStart = /^\s*(\(?[A-Ea-e][\)\.\-:]|\(?\d{1,2}[\)\.]\s|[•\-–*]\s)/;
+    lines.forEach((line) => {
+      if (!line.trim()) { if (out.length && out[out.length - 1] !== '') out.push(''); return; }
+      const prev = out.length ? out[out.length - 1] : '';
+      if (prev === '' || optionStart.test(line) || /[.?!:;]$/.test(prev.trim())) { out.push(line.trim()); return; }
+      if (/[a-zà-ú]-$/.test(prev) && /^[a-zà-ú]/.test(line.trim())) { out[out.length - 1] = prev.slice(0, -1) + line.trim(); return; }
+      out[out.length - 1] = prev + ' ' + line.trim();
+    });
+    return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  function runOcr(source, onStatus) {
+    ocrProgressCb = (m) => {
+      if (m.status === 'recognizing text') onStatus(`Lendo o texto… ${Math.round((m.progress || 0) * 100)}%`);
+      else if (/loading|initializ/.test(m.status || '')) onStatus('Preparando o leitor (baixa só na 1ª vez)…');
+    };
+    onStatus('Preparando o leitor (baixa só na 1ª vez)…');
+    return Promise.all([getOcrWorker(), imageToOcrCanvas(source)])
+      .then(([worker, canvas]) => worker.recognize(canvas))
+      .then(res => cleanOcrText(res && res.data ? res.data.text : ''));
+  }
+
+  function escAttr(str) {
+    return esc(str).replace(/"/g, '&quot;');
+  }
+
+  // --- Add/Edit question modal (bookmark a question to redo later, image and/or text) ---
+  // Sem argumento = criar. Com uma questão = editar (só campos de conteúdo;
+  // o progresso de revisão — n, EF, intervalo, histórico — não é tocado).
+  function modalQuestionHtml(q) {
+    const editing = !!q;
     const subjectNames = state.subjects.map(s => s.name);
-    const subjectOptionsHtml = subjectNames.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+    if (editing && q.subject && subjectNames.indexOf(q.subject) === -1) subjectNames.push(q.subject);
+    const subjectOptionsHtml = subjectNames.map(s => `<option value="${escAttr(s)}"${editing && q.subject === s ? ' selected' : ''}>${esc(s)}</option>`).join('');
     const body = `
       <div id="question-form">
         <div class="field">
@@ -2208,136 +2330,135 @@
         </div>
         <div class="field">
           <label for="input-question-topic">Tópico (opcional)</label>
-          <input id="input-question-topic" class="text-input font-medium" type="text" placeholder="ex: Termoquímica">
+          <input id="input-question-topic" class="text-input font-medium" type="text" placeholder="ex: Termoquímica" value="${editing ? escAttr(q.topic || '') : ''}">
         </div>
         <div class="field">
           <label for="input-question-statement">Enunciado (opcional se anexar imagem)</label>
-          <textarea id="input-question-statement" class="textarea-input" rows="4" placeholder="Cole o enunciado, se quiser"></textarea>
+          <textarea id="input-question-statement" class="textarea-input" rows="4" placeholder="Cole o enunciado, ou anexe a imagem abaixo e toque em “Extrair texto”">${editing ? esc(q.statementText || '') : ''}</textarea>
         </div>
         <div class="field">
           <label>Imagem (opcional se escreveu o enunciado)</label>
-          <div id="question-image-area">
-            <label class="image-drop" id="question-image-drop">
-              ${ICONS.image}
-              <span>Toque para escolher uma foto/print</span>
-              <input type="file" id="input-question-image" accept="image/*">
-            </label>
-          </div>
+          <div id="question-image-area"></div>
         </div>
         <div class="field">
           <label for="input-question-answer">Gabarito (opcional)</label>
-          <input id="input-question-answer" class="text-input font-medium" type="text" placeholder="ex: C, 42, Verdadeiro" maxlength="200">
+          <input id="input-question-answer" class="text-input font-medium" type="text" placeholder="ex: C, 42, Verdadeiro" maxlength="200" value="${editing ? escAttr(q.answerKey || '') : ''}">
         </div>
         <div class="field">
           <label for="input-question-resolution-text">Resolução (opcional, texto)</label>
-          <textarea id="input-question-resolution-text" class="textarea-input" rows="4" placeholder="Explique o passo a passo da resolução, se quiser"></textarea>
+          <textarea id="input-question-resolution-text" class="textarea-input" rows="4" placeholder="Explique o passo a passo da resolução, se quiser">${editing ? esc(q.resolutionText || '') : ''}</textarea>
         </div>
         <div class="field">
           <label>Resolução (opcional, imagem)</label>
-          <div id="resolution-image-area">
-            <label class="image-drop" id="resolution-image-drop">
-              ${ICONS.image}
-              <span>Toque para escolher uma foto/print da resolução</span>
-              <input type="file" id="input-resolution-image" accept="image/*">
-            </label>
-          </div>
+          <div id="resolution-image-area"></div>
         </div>
         <div id="question-error"></div>
         <div class="modal-form-actions">
           <button type="button" class="btn-secondary-block" data-action="close-modal">Cancelar</button>
-          <button type="button" class="btn-save-flex" id="question-save-btn" disabled>Salvar questão</button>
+          <button type="button" class="btn-save-flex" id="question-save-btn" disabled>${editing ? 'Salvar alterações' : 'Salvar questão'}</button>
         </div>
       </div>`;
-    return modalShell('Salvar questão para refazer', body);
+    return modalShell(editing ? 'Editar questão' : 'Salvar questão para refazer', body);
   }
 
-  function wireQuestionModal() {
+  function wireQuestionModal(existing) {
     const subjectSelect = document.getElementById('input-question-subject');
     const topicInput = document.getElementById('input-question-topic');
     const statementInput = document.getElementById('input-question-statement');
-    const imageArea = document.getElementById('question-image-area');
-    const resolutionImageArea = document.getElementById('resolution-image-area');
+    const resolutionTextInput = document.getElementById('input-question-resolution-text');
     const errorBox = document.getElementById('question-error');
     const saveBtn = document.getElementById('question-save-btn');
-    let imageData = null;
-    let resolutionImageData = null;
 
     function refresh() {
-      saveBtn.disabled = !(statementInput.value.trim().length > 0 || !!imageData);
+      saveBtn.disabled = !(statementInput.value.trim().length > 0 || !!questionImage.get());
     }
 
-    function wireFileInput() {
-      const input = document.getElementById('input-question-image');
-      input.addEventListener('change', () => {
-        const file = input.files && input.files[0];
+    // Campo de imagem reutilizável (enunciado e resolução): escolher,
+    // pré-visualizar, remover e — novo — extrair texto por OCR para o
+    // textarea correspondente (o texto é inserido para você revisar, nunca
+    // salvo direto).
+    function wireImageField(opts) {
+      const area = opts.area;
+      let data = opts.initial || null;
+      let originalFile = null; // foto original (melhor p/ OCR que a versão comprimida)
+
+      function showDrop() {
+        area.innerHTML = `
+          <label class="image-drop">
+            ${ICONS.image}
+            <span>${opts.dropLabel}</span>
+            <input type="file" accept="image/*">
+          </label>`;
+        area.querySelector('input[type="file"]').addEventListener('change', onFile);
+      }
+
+      function showPreview() {
+        area.innerHTML = `
+          <div class="image-preview-wrap">
+            <img src="${data}" alt="">
+            <button type="button" class="image-preview-remove" data-role="remove" aria-label="Remover imagem">${ICONS.x}</button>
+          </div>
+          <div class="ocr-row">
+            <button type="button" class="btn-chip" data-role="ocr">${ICONS.edit.replace('class="icon"', 'class="icon icon-sm"')}Extrair texto da imagem</button>
+            <span class="field-help ocr-status" data-role="ocr-status"></span>
+          </div>`;
+        area.querySelector('[data-role="remove"]').addEventListener('click', () => {
+          data = null; originalFile = null;
+          showDrop();
+          opts.onChange();
+        });
+        const ocrBtn = area.querySelector('[data-role="ocr"]');
+        const status = area.querySelector('[data-role="ocr-status"]');
+        ocrBtn.addEventListener('click', () => {
+          ocrBtn.disabled = true;
+          errorBox.innerHTML = '';
+          runOcr(originalFile || data, (msg) => { status.textContent = msg; })
+            .then((text) => {
+              if (!text) { status.textContent = 'Não encontrei texto legível nessa imagem.'; return; }
+              const cur = opts.textarea.value.trim();
+              opts.textarea.value = cur ? cur + '\n\n' + text : text;
+              opts.textarea.dispatchEvent(new Event('input'));
+              status.textContent = 'Texto inserido. Revise antes de salvar — o OCR pode errar acentos e fórmulas.';
+            })
+            .catch(() => {
+              status.textContent = 'Não consegui carregar o leitor de texto. Na 1ª vez é preciso estar online.';
+            })
+            .then(() => { ocrBtn.disabled = false; });
+        });
+      }
+
+      function onFile(e) {
+        const file = e.target.files && e.target.files[0];
         if (!file) return;
         errorBox.innerHTML = '';
         resizeImageFile(file, 1000, 0.75).then((dataUrl) => {
-          imageData = dataUrl;
-          imageArea.innerHTML = `
-            <div class="image-preview-wrap">
-              <img src="${imageData}" alt="">
-              <button type="button" class="image-preview-remove" id="question-image-remove">${ICONS.x}</button>
-            </div>`;
-          document.getElementById('question-image-remove').addEventListener('click', () => {
-            imageData = null;
-            restoreDropzone();
-            refresh();
-          });
-          refresh();
+          data = dataUrl; originalFile = file;
+          showPreview();
+          opts.onChange();
         }).catch(() => {
           errorBox.innerHTML = `<div class="error-box">${ICONS.alertCircle}<p>Não consegui ler essa imagem. Tente outra.</p></div>`;
         });
-      });
+      }
+
+      if (data) showPreview(); else showDrop();
+      return { get: () => data };
     }
 
-    function restoreDropzone() {
-      imageArea.innerHTML = `
-        <label class="image-drop" id="question-image-drop">
-          ${ICONS.image}
-          <span>Toque para escolher uma foto/print</span>
-          <input type="file" id="input-question-image" accept="image/*">
-        </label>`;
-      wireFileInput();
-    }
+    const questionImage = wireImageField({
+      area: document.getElementById('question-image-area'),
+      dropLabel: 'Toque para escolher uma foto/print',
+      initial: existing ? existing.imageData : null,
+      textarea: statementInput,
+      onChange: refresh,
+    });
+    const resolutionImage = wireImageField({
+      area: document.getElementById('resolution-image-area'),
+      dropLabel: 'Toque para escolher uma foto/print da resolução',
+      initial: existing ? existing.resolutionImageData : null,
+      textarea: resolutionTextInput,
+      onChange: function () {},
+    });
 
-    // Segundo drop de imagem, independente do da questão (mesmo padrão,
-    // outro alvo) — é a foto/print da resolução, opcional.
-    function wireResolutionFileInput() {
-      const input = document.getElementById('input-resolution-image');
-      input.addEventListener('change', () => {
-        const file = input.files && input.files[0];
-        if (!file) return;
-        errorBox.innerHTML = '';
-        resizeImageFile(file, 1000, 0.75).then((dataUrl) => {
-          resolutionImageData = dataUrl;
-          resolutionImageArea.innerHTML = `
-            <div class="image-preview-wrap">
-              <img src="${resolutionImageData}" alt="">
-              <button type="button" class="image-preview-remove" id="resolution-image-remove">${ICONS.x}</button>
-            </div>`;
-          document.getElementById('resolution-image-remove').addEventListener('click', () => {
-            resolutionImageData = null;
-            restoreResolutionDropzone();
-          });
-        }).catch(() => {
-          errorBox.innerHTML = `<div class="error-box">${ICONS.alertCircle}<p>Não consegui ler essa imagem. Tente outra.</p></div>`;
-        });
-      });
-    }
-
-    function restoreResolutionDropzone() {
-      resolutionImageArea.innerHTML = `
-        <label class="image-drop" id="resolution-image-drop">
-          ${ICONS.image}
-          <span>Toque para escolher uma foto/print da resolução</span>
-          <input type="file" id="input-resolution-image" accept="image/*">
-        </label>`;
-      wireResolutionFileInput();
-    }
-
-    wireFileInput();
-    wireResolutionFileInput();
     statementInput.addEventListener('input', refresh);
     refresh();
 
@@ -2346,16 +2467,25 @@
       const topic = topicInput.value.trim();
       const statementText = statementInput.value.trim();
       const answerKey = document.getElementById('input-question-answer').value.trim();
-      const resolutionText = document.getElementById('input-question-resolution-text').value.trim();
+      const resolutionText = resolutionTextInput.value.trim();
+      const imageData = questionImage.get();
+      const resolutionImageData = resolutionImage.get();
       if (!statementText && !imageData) return;
-      const now = Date.now();
-      const fresh = {
-        id: uid(), subject, topic, statementText, imageData, answerKey,
-        resolutionText, resolutionImageData,
-        createdAt: now, n: 0, EF: 2.5, intervalDays: 0,
-        lastReviewedAt: null, nextReviewAt: now, retired: false, history: [],
-      };
-      state.questionBank = state.questionBank.concat([fresh]);
+
+      if (existing) {
+        const editedFields = { subject, topic, statementText, imageData, answerKey, resolutionText, resolutionImageData };
+        state.questionBank = state.questionBank.map(qq => qq.id === existing.id ? Object.assign({}, qq, editedFields) : qq);
+        state.editingQuestionId = null;
+      } else {
+        const now = Date.now();
+        const fresh = {
+          id: uid(), subject, topic, statementText, imageData, answerKey,
+          resolutionText, resolutionImageData,
+          createdAt: now, n: 0, EF: 2.5, intervalDays: 0,
+          lastReviewedAt: null, nextReviewAt: now, retired: false, history: [],
+        };
+        state.questionBank = state.questionBank.concat([fresh]);
+      }
       state.activeModal = null;
       saveState(state);
       render();
@@ -2414,6 +2544,7 @@
         break;
       case 'reset-cycle':
         state.subjects = state.subjects.map(s => Object.assign({}, s, { completedHours: 0 }));
+        state.currentBlock = null;
         saveState(state);
         render();
         break;
@@ -2529,6 +2660,11 @@
         state.activeModal = 'add-question';
         render();
         break;
+      case 'edit-question':
+        state.editingQuestionId = target.getAttribute('data-id');
+        state.activeModal = 'edit-question';
+        render();
+        break;
       case 'open-redo-question':
         state.redoingQuestionId = target.getAttribute('data-id');
         state.answerRevealed = false; // esconde o gabarito de novo a cada nova rodada, pra forçar o autoteste antes
@@ -2627,6 +2763,7 @@
       if (Array.isArray(saved.subjects)) state.subjects = saved.subjects;
       if (saved.settings) state.settings = Object.assign({}, INITIAL_SETTINGS, saved.settings);
       if (typeof saved.studyCounter === 'number') state.studyCounter = saved.studyCounter;
+      state.currentBlock = saved.currentBlock || null;
       if (Array.isArray(saved.studyLogs)) state.studyLogs = saved.studyLogs;
       if (Array.isArray(saved.errorLogs)) state.errorLogs = saved.errorLogs;
       if (Array.isArray(saved.topicReviews)) state.topicReviews = saved.topicReviews;

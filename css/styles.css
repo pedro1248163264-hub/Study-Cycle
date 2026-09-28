@@ -1132,6 +1132,7 @@ html.dark .pill-completed { color: #34D399; background-color: rgba(6, 78, 59, 0.
 .log-card-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.5rem;
   flex-shrink: 0;
 }
@@ -1604,3 +1605,15 @@ html.dark .error-badge-green { background-color: rgba(6, 95, 70, 0.25); color: #
     transition-duration: 0.001ms !important;
   }
 }
+
+
+/* OCR: botão + status embaixo da imagem anexada */
+.ocr-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.625rem;
+}
+.ocr-row .field-help { margin: 0; }
+.btn-chip:disabled { opacity: 0.6; cursor: progress; }
