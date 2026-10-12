@@ -10,7 +10,7 @@
    That's what forces every visitor's cache to refresh.
    ========================================================= */
 
-const CACHE_VERSION = 'v11';
+const CACHE_VERSION = 'v12';
 const CACHE_NAME = `study-cycle-${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [

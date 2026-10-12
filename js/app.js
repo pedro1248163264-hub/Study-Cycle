@@ -2388,8 +2388,36 @@
             ${ICONS.image}
             <span>${opts.dropLabel}</span>
             <input type="file" accept="image/*">
-          </label>`;
+          </label>
+          <div class="ocr-row">
+            <button type="button" class="btn-chip" data-role="paste">${ICONS.image.replace('class="icon"', 'class="icon icon-sm"')}Colar imagem</button>
+            <span class="field-help" data-role="paste-hint">ou use Ctrl+V / “Colar” no teclado</span>
+          </div>`;
         area.querySelector('input[type="file"]').addEventListener('change', onFile);
+        area.querySelector('[data-role="paste"]').addEventListener('click', onPasteButton);
+      }
+
+      // Botão "Colar imagem": lê a área de transferência (precisa de HTTPS e,
+      // em alguns navegadores, de uma permissão). Se não der, o Ctrl+V /
+      // "Colar" no teclado continua funcionando (listener de paste abaixo).
+      function onPasteButton() {
+        const hint = area.querySelector('[data-role="paste-hint"]');
+        const fail = (msg) => { if (hint) hint.textContent = msg; };
+        if (!navigator.clipboard || !navigator.clipboard.read) {
+          fail('Seu navegador não permite o botão. Use Ctrl+V (ou segure e toque em “Colar”).');
+          return;
+        }
+        navigator.clipboard.read().then(async (items) => {
+          for (const item of items) {
+            const type = item.types.find(t => t.indexOf('image/') === 0);
+            if (type) {
+              const blob = await item.getType(type);
+              setFile(new File([blob], 'colada.' + (type.split('/')[1] || 'png'), { type }));
+              return;
+            }
+          }
+          fail('Não há imagem na área de transferência.');
+        }).catch(() => fail('Não consegui acessar a área de transferência. Use Ctrl+V.'));
       }
 
       function showPreview() {
@@ -2429,6 +2457,11 @@
 
       function onFile(e) {
         const file = e.target.files && e.target.files[0];
+        if (file) setFile(file);
+      }
+
+      // Entrada comum: arquivo escolhido, botão Colar ou Ctrl+V.
+      function setFile(file) {
         if (!file) return;
         errorBox.innerHTML = '';
         resizeImageFile(file, 1000, 0.75).then((dataUrl) => {
@@ -2441,7 +2474,7 @@
       }
 
       if (data) showPreview(); else showDrop();
-      return { get: () => data };
+      return { get: () => data, setFile };
     }
 
     const questionImage = wireImageField({
@@ -2458,6 +2491,32 @@
       textarea: resolutionTextInput,
       onChange: function () {},
     });
+
+    // Ctrl+V / "Colar" com uma imagem na área de transferência: vai para o
+    // campo de imagem em que você estava (resolução ou enunciado). Colar só
+    // texto continua normal. O listener se remove sozinho quando o modal fecha.
+    const formEl = document.getElementById('question-form');
+    const resolutionFields = [
+      resolutionTextInput.closest('.field'),
+      document.getElementById('resolution-image-area').closest('.field'),
+    ];
+    let lastField = null;
+    const trackField = (e) => { lastField = e.target.closest ? e.target.closest('.field') : null; };
+    formEl.addEventListener('focusin', trackField);
+    formEl.addEventListener('pointerdown', trackField);
+    function onDocPaste(e) {
+      if (!document.body.contains(formEl)) { document.removeEventListener('paste', onDocPaste); return; }
+      const items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      let file = null;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].kind === 'file' && items[i].type.indexOf('image/') === 0) { file = items[i].getAsFile(); break; }
+      }
+      if (!file) return;
+      e.preventDefault();
+      (resolutionFields.indexOf(lastField) !== -1 ? resolutionImage : questionImage).setFile(file);
+    }
+    document.addEventListener('paste', onDocPaste);
 
     statementInput.addEventListener('input', refresh);
     refresh();

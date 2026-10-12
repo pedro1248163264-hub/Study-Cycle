@@ -2,6 +2,16 @@
 
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
+## [v12] — Colar imagem nas questões
+
+### Adicionado
+- **Colar imagem** no modal de questão (enunciado e resolução): botão "Colar imagem" (lê a área de transferência) e suporte a Ctrl+V / "Colar" do teclado. A imagem colada vai para o campo em que você estava por último (resolução ou enunciado) e passa pelo mesmo redimensionamento/OCR das fotos escolhidas. Colar só texto continua normal.
+
+### Arquivos alterados
+`js/app.js` (`wireImageField` ganhou `setFile`, `onPasteButton` e listener de `paste`), `sw.js` (v11 → v12).
+
+---
+
 ## [v11] — Horas seguidas corrigidas, editar questão salva, OCR e teto de intervalo maior
 
 ### Contexto
