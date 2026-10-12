@@ -2,6 +2,42 @@
 
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
+## [v13] — Reorganização geral (sem mudar o que o app faz)
+
+### Contexto
+Pedido: deixar o site o mais eficiente possível, organizado, sem coisas inúteis e generalizando tarefas repetidas, para dar menos trabalho em qualquer área. **Dados existentes (IndexedDB e nuvem) continuam compatíveis**; o cálculo do ciclo e do SM-2 é o mesmo (conferido contra a v12 com os mesmos dados).
+
+### Removido (era peso morto)
+- **Cópias duplicadas na raiz** (`app.js`, `styles.css`, `icons.js`, `favicon.svg`, `icon-192.png`, `icon-512.png`): eram idênticas às de `js/`, `css/` e `icons/` e confundiam qual editar.
+- **Número de versão do Service Worker** (`CACHE_VERSION`) e o aviso "Nova versão disponível": agora o app usa "rede primeiro" — com internet sempre carrega a versão mais nova, sem precisar trocar nada a cada publicação.
+- Esqueleto HTML estático das telas e vários `display:none` manuais: as telas são desenhadas por JS num único `<main id="screen">`.
+
+### Reorganizado
+`js/app.js` (2880 linhas) foi dividido por função:
+`store.js` (estado + IndexedDB + coleções), `logic.js` (ciclo e SM-2, puro), `sync.js` (Supabase), `ocr.js` (imagem/OCR), `ui.js` (peças reutilizáveis), `screens.js` (4 telas), `modals.js` (todos os modais), `main.js` (ações/eventos/início). Carregados por `<script>` comum (sem build; continua abrindo direto do arquivo).
+
+### Generalizado (um lugar só em vez de vários)
+- **Dados sincronizados**: lista única `SYNCED` em `store.js` — salvar, carregar e sincronizar usam a mesma (antes eram 3 blocos copiados). Dado novo = 1 linha.
+- **Coleções**: `col.put / patch / remove / find` para as 5 listas (antes: `map/filter/concat` espalhados).
+- **Ações**: `data-action` genérico (`modal`, `set`, `remove`, `patch`) no lugar de ~40 `case` de um `switch`. Um modal agora é uma entrada em `SC.modals`; uma tela, uma entrada em `SC.screens` (a aba de navegação nasce sozinha).
+- **Estado de edição**: 8 campos soltos (`editingLogId`, `editingErrorId`, `redoingQuestionId`, prefills…) viraram um só: `state.modal = { name, id, ...dados }`.
+- **Filtros**: uma barra de filtros e um `applyFilters` para as 4 listas (antes 4 cópias).
+- **Formulários**: `bindForm` cuida de habilitar/desabilitar Salvar, validação com mensagem, "Outra (digitar)", botões de escolha e campos condicionais; `readForm` lê tudo por `name`.
+- **Cartões, abas, estados vazios, botões, seletor de matéria**: componentes únicos.
+- **SM-2**: `review()` único para tópico e questão; `esc()` agora também serve para atributos (some `escAttr`).
+
+### Melhorias de uso
+- **Confirmação antes de excluir** erro, tópico, questão (com imagem/histórico) e matéria.
+- **Tema escuro sem "flash" branco** ao abrir (espelhado em `localStorage` e aplicado no `<head>`).
+- **`navigator.storage.persist()`**: pede ao navegador para não apagar seus dados quando faltar espaço (Safari limpa dados de sites sem uso).
+- IndexedDB: conexão aberta uma vez e reaproveitada (antes abria uma a cada salvamento).
+- Troca de ícone lua/sol feita só por CSS.
+
+### Arquivos
+Novos: `js/store.js`, `logic.js`, `sync.js`, `ocr.js`, `ui.js`, `screens.js`, `modals.js`, `main.js`. Removidos: `js/app.js` e as cópias da raiz. Alterados: `index.html`, `css/styles.css` (aviso de atualização removido; regras do tema e de `[data-error]`), `sw.js` (reescrito).
+
+---
+
 ## [v12] — Colar imagem nas questões
 
 ### Adicionado

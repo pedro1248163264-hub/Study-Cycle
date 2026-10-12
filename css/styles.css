@@ -108,6 +108,12 @@ select:focus-visible,
 .icon-sm { width: 1rem; height: 1rem; }
 .icon-white { color: #fff; }
 
+/* Botão de tema: mostra lua no claro e sol no escuro (sem JS). */
+.icon-sun { display: none; }
+html.dark .icon-moon { display: none; }
+html.dark .icon-sun { display: block; }
+.subject-custom { margin-top: 0.5rem; }
+
 /* =========================
    HEADER
    ========================= */
@@ -1360,20 +1366,6 @@ html.dark .error-badge-fuchsia { background-color: rgba(112, 26, 117, 0.25); col
 /* =========================
    UPDATE TOAST
    ========================= */
-.update-toast {
-  position: fixed;
-  left: 50%;
-  bottom: 1.5rem;
-  transform: translateX(-50%);
-  background-color: var(--foreground);
-  color: var(--background);
-  padding: 0.625rem 1.25rem;
-  border-radius: var(--radius-full);
-  font-size: 0.875rem;
-  font-weight: 500;
-  box-shadow: var(--shadow-modal);
-  z-index: 60;
-}
 
 /* =========================
    QUESTION REVIEW (spaced repetition engine)
@@ -1617,3 +1609,6 @@ html.dark .error-badge-green { background-color: rgba(6, 95, 70, 0.25); color: #
 }
 .ocr-row .field-help { margin: 0; }
 .btn-chip:disabled { opacity: 0.6; cursor: progress; }
+
+/* Caixa de avisos dos formulários: só ocupa espaço quando há mensagem. */
+[data-error]:empty { display: none; }

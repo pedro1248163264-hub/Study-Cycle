@@ -1,0 +1,387 @@
+/* =========================================================
+   Study Cycle — telas
+   Cada tela é uma entrada em SC.screens (a ordem aqui é a ordem das abas).
+   ========================================================= */
+(function () {
+  'use strict';
+  const SC = window.SC;
+  const { state, esc, icon, chip, button, screenHeader, emptyState, tabs, logCard, cardMain, cardList,
+    filterBar, applyFilters, subjectFilterOptions, dueBadge, formatDate, efLabel } = Object.assign({}, SC);
+
+  const STUDY_CATEGORIES = ['Book', 'Video', 'Question'];
+  const CATEGORY_LABEL = { Book: 'Livro', Video: 'Vídeo', Question: 'Questões' };
+  const CATEGORY_ICON = { Book: 'bookOpen', Video: 'video', Question: 'helpCircle' };
+
+  // Tipos de erro: [valor salvo, rótulo, cor do selo]. Os valores ficam em
+  // inglês porque já estão gravados nos dados existentes.
+  const ERROR_TYPES = [
+    ['Knowledge gap', 'Lacuna de conhecimento', 'violet'],
+    ['Attention / careless mistake', 'Desatenção / descuido', 'amber'],
+    ['Time management', 'Gestão de tempo', 'blue'],
+    ['Calculation', 'Erro de cálculo', 'rose'],
+    ['Misunderstood question', 'Interpretação errada', 'orange'],
+    ['Forgot concept', 'Esqueci o conceito', 'fuchsia'],
+    ['Other', 'Outro', 'neutral'],
+  ];
+
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const excerpt = (s, n) => (s.length > n ? s.slice(0, n) + '…' : s);
+
+  // ---------- STUDY CYCLE ----------
+  function dashboardScreen(d) {
+    const overview = `
+      <section class="card cycle-overview">
+        <div class="cycle-overview-inner">
+          <div class="cycle-info">
+            <h2 class="eyebrow">Ciclo desta semana</h2>
+            <div class="cycle-total">
+              <span class="cycle-total-num">${d.totalCompleted}</span>
+              <span class="cycle-total-label">/ ${d.totalAllocated} h concluídas</span>
+            </div>
+            <div class="progress-track"><div class="progress-fill" style="width:${d.overallProgress}%"></div></div>
+          </div>
+          <div class="cycle-actions">
+            ${d.isCycleComplete
+              ? button('Reiniciar ciclo', 'rotateCcw', 'reset-cycle')
+              : button('Registrar tempo', 'clock', 'modal', { modal: 'logTime' })}
+          </div>
+        </div>
+      </section>`;
+
+    const sequence = d.isCycleComplete ? '' : `
+      <section class="section">
+        <div class="section-header"><h3>Sequência sugerida</h3></div>
+        <div class="card sequence-card">${sequenceCard(d)}</div>
+      </section>`;
+
+    const subjects = `
+      <section class="section">
+        <div class="section-header">
+          <h3>Suas matérias</h3>
+          ${button('Adicionar matéria', 'plus', 'modal', { modal: 'subject' }, 'card-outline')}
+        </div>
+        <div class="subjects-grid">${subjectCards(d)}</div>
+      </section>`;
+
+    return `<div>${overview}${sequence}${subjects}</div>`; // <div> simples: o espaçamento vem do CSS de blocos
+  }
+
+  function sequenceCard(d) {
+    if (!d.nextStudy) {
+      const none = d.allocatedSubjects.length === 0;
+      return `
+        <div class="sequence-empty">
+          ${icon('checkCircle')}
+          <p class="sequence-empty-title">${none ? 'Adicione matérias para começar' : 'Tudo em dia!'}</p>
+          <p class="sequence-empty-sub">${none ? 'Defina suas matérias e configurações para gerar a sequência.' : 'Registre mais tempo ou reinicie o ciclo.'}</p>
+        </div>`;
+    }
+    const rest = d.sequence.slice(1, 10);
+    const restHtml = rest.map((s) => `<div class="sequence-chip subject-color-${s.colorIndex}">${esc(s.name)}</div>`)
+      .join('<div class="sequence-arrow">&rarr;</div>')
+      + (d.sequence.length > 10 ? `<div class="sequence-more">+${d.sequence.length - 10} mais</div>` : '');
+    return `
+      <div class="sequence-content">
+        <div class="next-study">
+          <span class="next-study-label">Próxima matéria</span>
+          <div class="next-study-chip subject-color-${d.nextStudy.colorIndex}" data-action="modal" data-modal="nextMaterial" data-subject="${esc(d.nextStudy.name)}" role="button" tabindex="0">
+            ${icon('play')}
+            <div>
+              <div class="next-study-name">${esc(d.nextStudy.name)}</div>
+              <div class="next-study-duration">1 hora</div>
+            </div>
+          </div>
+        </div>
+        <div class="sequence-rest">
+          <span class="sequence-rest-label">Depois:</span>
+          ${restHtml}
+        </div>
+      </div>`;
+  }
+
+  function subjectCards(d) {
+    if (d.allocatedSubjects.length === 0) {
+      return `
+        <div class="empty-state">
+          <p class="empty-state-title">Nenhuma matéria adicionada</p>
+          <p class="empty-state-sub">Toque em "Adicionar matéria" para começar a organizar seus estudos.</p>
+        </div>`;
+    }
+    const stat = (label, value) => `
+      <div><div class="subject-stat-label">${label}</div><div class="subject-stat-dots">
+        ${[0, 1, 2, 3, 4].map((i) => `<span class="subject-stat-dot${i < value ? ' filled' : ''}"></span>`).join('')}
+      </div></div>`;
+    return d.allocatedSubjects.map((s) => {
+      const pct = s.allocated > 0 ? Math.min(100, (s.completedHours / s.allocated) * 100) : 0;
+      return `
+      <div class="subject-card">
+        <button type="button" class="subject-edit-btn" data-action="modal" data-modal="subject" data-id="${s.id}" aria-label="Editar ${esc(s.name)}">${icon('edit')}</button>
+        <div class="subject-head">
+          <span class="subject-dot subject-color-${s.colorIndex}"></span>
+          <h4 class="subject-name">${esc(s.name)}</h4>
+        </div>
+        <div class="subject-hours-row">
+          <div>
+            <div class="subject-hours">${s.completedHours}<span class="subject-hours-total"> / ${s.allocated}h</span></div>
+            <div class="subject-hours-label">Concluído</div>
+          </div>
+        </div>
+        <div class="subject-progress-track"><div class="subject-progress-fill subject-color-${s.colorIndex}" style="width:${pct}%"></div></div>
+        <div class="subject-stats">${stat('Dif.', s.difficulty)}${stat('Cont.', s.content)}${stat('Imp.', s.importance)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // ---------- STUDY LOG ----------
+  // Linha de posição: "Capítulo 4 · Página 143", "EP 12 · 12:34" ou "Exercício 27".
+  function logDetail(log) {
+    const parts = {
+      Book: [log.chapter, log.page && `Página ${log.page}`],
+      Video: [log.episode && `EP ${log.episode}`, log.timestamp],
+      Question: [log.exerciseNumber && `Exercício ${log.exerciseNumber}`],
+    }[log.category] || [];
+    return parts.filter(Boolean).join(' · ');
+  }
+
+  const categoryTag = (log) =>
+    `<span class="log-card-category">${icon(CATEGORY_ICON[log.category] || 'helpCircle')}${esc(CATEGORY_LABEL[log.category] || log.category)}</span>`;
+
+  // Cartão de material. compact = versão do modal "Próxima matéria".
+  function studyLogCard(log, compact) {
+    const done = log.status === 'completed';
+    const meta = [categoryTag(log)];
+    if (!compact && log.subject) meta.push(`<span class="log-card-subject">${esc(log.subject)}</span>`);
+    if (!compact && done) meta.push(`<span class="pill-completed">${icon('check')}Concluído</span>`);
+    const actions = compact
+      ? [chip('Continuar', null, 'modal', { modal: 'studyLog', id: log.id }, 'success')]
+      : [
+        chip('Editar', 'edit', 'modal', { modal: 'studyLog', id: log.id }),
+        done
+          ? chip('Reativar', 'rotateCcw', 'patch', { col: 'studyLogs', id: log.id, set: JSON.stringify({ status: 'active' }) })
+          : chip('Concluir', 'check', 'patch', { col: 'studyLogs', id: log.id, set: JSON.stringify({ status: 'completed' }) }, 'success'),
+      ];
+    return logCard({ cls: !compact && done ? 'is-completed' : '', main: cardMain({ meta, title: log.name, detail: logDetail(log) }), actions });
+  }
+
+  function studyLogScreen() {
+    const active = state.studyLogs.filter((l) => l.status === 'active');
+    const completed = state.studyLogs.filter((l) => l.status === 'completed');
+    const tab = state.ui.studyLogTab;
+    const base = tab === 'active' ? active : completed;
+    const shown = applyFilters(base, 'log');
+
+    let list;
+    if (base.length === 0) {
+      list = tab === 'active'
+        ? emptyState('bookMarked', 'Nenhum registro ativo', 'Comece a acompanhar o que você está estudando agora.', button('Adicionar registro', 'plus', 'modal', { modal: 'studyLog' }))
+        : emptyState('bookMarked', 'Nenhum registro concluído', 'Materiais marcados como concluídos aparecem aqui.');
+    } else if (shown.length === 0) {
+      list = emptyState('filter', 'Nenhum registro corresponde aos filtros', 'Tente ajustar ou limpar os filtros.');
+    } else {
+      list = cardList(shown.map((l) => studyLogCard(l)));
+    }
+
+    return `<div class="screen">
+      ${screenHeader('Study Log', 'Acompanhe o que você está estudando e onde parou.', button('Adicionar registro', 'plus', 'modal', { modal: 'studyLog' }))}
+      ${tabs('studyLogTab', [{ key: 'active', label: 'Ativos', count: active.length }, { key: 'completed', label: 'Concluídos', count: completed.length }])}
+      ${base.length ? filterBar('log', [
+        { field: 'subject', all: 'Todas as matérias', options: subjectFilterOptions(state.studyLogs).map((s) => [s, s]) },
+        { field: 'category', all: 'Todos os materiais', options: STUDY_CATEGORIES.map((c) => [c, CATEGORY_LABEL[c]]) },
+      ], shown.length) : ''}
+      ${list}
+    </div>`;
+  }
+
+  // ---------- ERROR LOG ----------
+  function errorLogScreen() {
+    const shown = applyFilters(state.errorLogs, 'error');
+    const type = (t) => ERROR_TYPES.find((x) => x[0] === t) || [t, t, 'neutral'];
+
+    let list;
+    if (state.errorLogs.length === 0) {
+      list = emptyState('alertTriangle', 'Nenhum erro registrado', 'Registre seus erros ao estudar para identificar padrões e fechar lacunas.', button('Registrar erro', 'plus', 'modal', { modal: 'error' }));
+    } else if (shown.length === 0) {
+      list = emptyState('filter', 'Nenhum erro corresponde aos filtros', 'Tente ajustar ou limpar os filtros.');
+    } else {
+      list = cardList(shown.map((e) => logCard({
+        cls: 'error-card',
+        mainCls: 'error-card-body',
+        main: `
+          <div class="error-card-title">
+            <span class="error-card-subject">${esc(e.subject)}</span>
+            <span class="error-card-sep">&middot;</span>
+            <span class="error-card-topic">${esc(e.topic)}</span>
+          </div>
+          <p class="error-card-desc">&ldquo;${esc(e.description)}&rdquo;</p>
+          <div><span class="error-badge error-badge-${type(e.errorType)[2]}">${esc(type(e.errorType)[1])}</span></div>`,
+        actions: [
+          chip('Editar', 'edit', 'modal', { modal: 'error', id: e.id }),
+          chip('Excluir', 'trash', 'remove', { col: 'errorLogs', id: e.id, confirm: 'Excluir este erro?' }, 'danger'),
+        ],
+      })));
+    }
+
+    return `<div class="screen">
+      ${screenHeader('Error Log', 'Registre erros para identificar padrões e melhorar.', button('Registrar erro', 'plus', 'modal', { modal: 'error' }))}
+      ${state.errorLogs.length ? filterBar('error', [
+        { field: 'subject', all: 'Todas as matérias', options: subjectFilterOptions(state.errorLogs).map((s) => [s, s]) },
+        { field: 'errorType', all: 'Todos os tipos', options: ERROR_TYPES.map((t) => [t[0], t[1]]) },
+      ], shown.length) : ''}
+      ${list}
+    </div>`;
+  }
+
+  // ---------- REVISÃO DE QUESTÕES ----------
+  const typeTag = (iconName, label) => `<span class="rev-type-tag">${icon(iconName)}${label}</span>`;
+  const strengthBadge = (EF) => { const s = efLabel(EF); return `<span class="error-badge ${s.cls}">${s.text}</span>`; };
+
+  // Item da fila "Hoje"/"Próximas": tópico ou questão.
+  function queueItem(item) {
+    if (item.kind === 'topic') {
+      return logCard({
+        main: cardMain({
+          meta: [typeTag('target', 'Tópico'), dueBadge(item.nextReviewAt), strengthBadge(item.EF)],
+          title: item.subject,
+          detail: `${item.topic} · última rodada: ${formatDate(item.lastReviewedAt)}`,
+        }),
+        actions: [chip('Registrar rodada', 'repeat', 'modal', { modal: 'round', subject: item.subject, topic: item.topic })],
+      });
+    }
+    return questionCard(item, { meta: [typeTag('image', 'Questão'), dueBadge(item.nextReviewAt)], actions: [redoChip(item)] });
+  }
+
+  const redoChip = (q) => chip('Refazer', 'repeat', 'modal', { modal: 'redo', id: q.id });
+
+  function questionCard(q, { meta, actions, title }) {
+    return logCard({
+      thumb: q.imageData,
+      main: cardMain({
+        meta,
+        title: title || [q.subject, q.topic].filter(Boolean).join(' · ') || 'Questão salva',
+        detail: q.statementText ? excerpt(q.statementText, 90) : '',
+      }),
+      actions,
+    });
+  }
+
+  function reviewTodayHtml() {
+    const now = Date.now();
+    const items = (list, kind) => list.map((x) => Object.assign({ kind }, x));
+    const pending = items(state.topicReviews, 'topic')
+      .concat(items(state.questionBank.filter((q) => !q.retired), 'question'))
+      .filter((x) => x.nextReviewAt)
+      .sort((a, b) => a.nextReviewAt - b.nextReviewAt);
+    const due = SC.interleaveBySubject(pending.filter((x) => x.nextReviewAt <= now));
+    const upcoming = pending.filter((x) => x.nextReviewAt > now).slice(0, 10);
+
+    return {
+      dueCount: due.length,
+      html: (due.length === 0
+        ? emptyState('checkCircle', 'Nada para revisar agora', 'Quando um tópico ou questão vencer, aparece aqui — misturado entre matérias de propósito, pra treinar o reconhecimento igual na prova.')
+        : cardList(due.map(queueItem)))
+        + (upcoming.length ? `
+        <div class="section" style="margin-top:0.5rem">
+          <div class="review-section-title">${icon('clock')}Próximas revisões</div>
+          ${cardList(upcoming.map(queueItem))}
+        </div>` : ''),
+    };
+  }
+
+  function reviewTopicsHtml() {
+    const all = state.topicReviews;
+    const shown = applyFilters(all, 'topics').sort((a, b) => (a.nextReviewAt || 0) - (b.nextReviewAt || 0));
+    let list;
+    if (all.length === 0) {
+      list = emptyState('target', 'Nenhum tópico acompanhado ainda', 'Registre uma rodada de questões (a 2ª rodada em diante — não a fixação do mesmo dia) para o motor começar a agendar as próximas.', button('Registrar rodada', 'plus', 'modal', { modal: 'round' }));
+    } else if (shown.length === 0) {
+      list = emptyState('filter', 'Nenhum tópico corresponde ao filtro');
+    } else {
+      list = cardList(shown.map((t) => logCard({
+        main: cardMain({
+          meta: [dueBadge(t.nextReviewAt), strengthBadge(t.EF), `<span class="log-card-subject">${plural(t.totalRounds, 'rodada', 'rodadas')}</span>`],
+          title: t.subject,
+          detail: `${t.topic} · última: ${formatDate(t.lastReviewedAt)} · próxima: ${formatDate(t.nextReviewAt)}`,
+        }),
+        actions: [
+          chip('Nova rodada', 'repeat', 'modal', { modal: 'round', subject: t.subject, topic: t.topic }),
+          chip('Excluir', 'trash', 'remove', { col: 'topicReviews', id: t.id, confirm: 'Excluir este tópico e o histórico dele?' }, 'danger'),
+        ],
+      })));
+    }
+    return (all.length ? filterBar('topics', [{ field: 'subject', all: 'Todas as matérias', options: subjectFilterOptions(all).map((s) => [s, s]) }]) : '') + list;
+  }
+
+  function reviewQuestionsHtml() {
+    const bank = state.questionBank;
+    const active = bank.filter((q) => !q.retired).sort((a, b) => (a.nextReviewAt || 0) - (b.nextReviewAt || 0));
+    const graduated = bank.filter((q) => q.retired);
+    const isActive = state.ui.questionSubTab === 'active';
+    const base = isActive ? active : graduated;
+    const shown = applyFilters(base, 'questions');
+
+    let list;
+    if (base.length === 0) {
+      list = isActive
+        ? emptyState('image', 'Nenhuma questão salva', 'Guarde o print ou o enunciado de uma questão difícil para o motor te lembrar de refazê-la.', button('Salvar questão', 'plus', 'modal', { modal: 'question' }))
+        : emptyState('checkCircle', 'Nenhuma questão graduada ainda', `Uma questão sai da fila ativa sozinha depois de ${SC.GRADUATE_AFTER_N} acertos seguidos ao ser refeita.`);
+    } else if (shown.length === 0) {
+      list = emptyState('filter', 'Nenhuma questão corresponde ao filtro');
+    } else {
+      list = cardList(shown.map((q) => questionCard(q, {
+        title: q.topic || (q.statementText ? q.statementText.slice(0, 60) : 'Questão salva'),
+        meta: [
+          isActive ? dueBadge(q.nextReviewAt) : `<span class="pill-completed">${icon('check')}Graduada</span>`,
+          q.subject ? `<span class="log-card-subject">${esc(q.subject)}</span>` : '',
+        ],
+        actions: [
+          chip('Editar', 'edit', 'modal', { modal: 'question', id: q.id }),
+          isActive ? redoChip(q) : chip('Reativar', 'rotateCcw', 'revive', { id: q.id }),
+          chip('Excluir', 'trash', 'remove', { col: 'questionBank', id: q.id, confirm: 'Excluir esta questão (imagem e histórico incluídos)?' }, 'danger'),
+        ],
+      })));
+    }
+
+    return `
+      <div class="section-header" style="margin-top:-0.5rem">
+        ${tabs('questionSubTab', [{ key: 'active', label: 'Ativas', count: active.length }, { key: 'graduated', label: 'Graduadas', count: graduated.length }])}
+        ${button('Salvar questão', 'plus', 'modal', { modal: 'question' }, 'card-outline')}
+      </div>
+      ${base.length ? filterBar('questions', [{ field: 'subject', all: 'Todas as matérias', options: subjectFilterOptions(bank).map((s) => [s, s]) }]) : ''}
+      ${list}`;
+  }
+
+  function reviewScreen() {
+    const tab = state.ui.reviewTab;
+    const today = reviewTodayHtml();
+    const activeQuestions = state.questionBank.filter((q) => !q.retired).length;
+    const body = tab === 'topics' ? reviewTopicsHtml() : tab === 'questions' ? reviewQuestionsHtml() : today.html;
+    const stat = (num, label, due) => `
+      <div class="review-stat-chip${due ? ' is-due' : ''}">
+        <span class="review-stat-chip-num">${num}</span>
+        <span class="review-stat-chip-label">${label}</span>
+      </div>`;
+
+    return `<div class="screen">
+      ${screenHeader('Revisão de Questões', 'Motor de repetição espaçada para tópicos e questões que valem uma nova rodada.', button('Registrar rodada', 'plus', 'modal', { modal: 'round' }))}
+      <div class="review-stats-row">
+        ${stat(today.dueCount, 'Para revisar hoje', today.dueCount > 0)}
+        ${stat(state.topicReviews.length, 'Tópicos acompanhados')}
+        ${stat(activeQuestions, 'Questões no banco')}
+      </div>
+      ${tabs('reviewTab', [
+        { key: 'today', label: 'Hoje' },
+        { key: 'topics', label: 'Tópicos', count: state.topicReviews.length },
+        { key: 'questions', label: 'Questões', count: activeQuestions },
+      ])}
+      ${body}
+    </div>`;
+  }
+
+  // Ordem = ordem das abas de navegação.
+  SC.screens.dashboard = { label: 'Study Cycle', icon: 'layoutDashboard', render: dashboardScreen };
+  SC.screens['study-log'] = { label: 'Study Log', icon: 'bookMarked', render: studyLogScreen };
+  SC.screens['error-log'] = { label: 'Error Log', icon: 'alertTriangle', render: errorLogScreen };
+  SC.screens['question-review'] = { label: 'Revisão', icon: 'repeat', render: reviewScreen };
+
+  Object.assign(SC, { STUDY_CATEGORIES, CATEGORY_LABEL, CATEGORY_ICON, ERROR_TYPES, studyLogCard });
+})();
