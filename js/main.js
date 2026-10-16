@@ -47,6 +47,7 @@
 
     // Questão do banco de revisão
     revive(el) { col.patch('questionBank', el.dataset.id, { retired: false, n: 0, nextReviewAt: Date.now() }); persist(); },
+    draw() { state.ui.draw = SC.drawLocked(state.topicReviews, 5).map((t) => t.id); render(); },
     reveal(el) { state.modal[el.dataset.what] = true; render(); }, // mostra gabarito/resolução
     grade(el) {
       const q = col.find('questionBank', el.dataset.id);

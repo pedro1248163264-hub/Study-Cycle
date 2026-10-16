@@ -15,13 +15,15 @@
   // Tipos de erro: [valor salvo, rótulo, cor do selo]. Os valores ficam em
   // inglês porque já estão gravados nos dados existentes.
   const ERROR_TYPES = [
-    ['Knowledge gap', 'Lacuna de conhecimento', 'violet'],
-    ['Attention / careless mistake', 'Desatenção / descuido', 'amber'],
-    ['Time management', 'Gestão de tempo', 'blue'],
-    ['Calculation', 'Erro de cálculo', 'rose'],
-    ['Misunderstood question', 'Interpretação errada', 'orange'],
+    ['Knowledge gap', 'Lacuna de teoria', 'violet'],
+    ['Missed approach', 'Sabia, mas não viu o caminho', 'orange'],
+    ['Attention / careless mistake', 'Desatenção / conta', 'amber'],
+    ['Time management', 'Estourou o tempo', 'blue'],
     ['Forgot concept', 'Esqueci o conceito', 'fuchsia'],
     ['Other', 'Outro', 'neutral'],
+    // antigos: continuam aparecendo nos dados já salvos, mas saíram da lista de escolha
+    ['Calculation', 'Erro de cálculo (antigo)', 'rose', true],
+    ['Misunderstood question', 'Interpretação errada (antigo)', 'orange', true],
   ];
 
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -233,18 +235,18 @@
 
   // ---------- REVISÃO DE QUESTÕES ----------
   const typeTag = (iconName, label) => `<span class="rev-type-tag">${icon(iconName)}${label}</span>`;
-  const strengthBadge = (EF) => { const s = efLabel(EF); return `<span class="error-badge ${s.cls}">${s.text}</span>`; };
+  const strengthBadge = (t) => { const s = SC.topicStatus(t); return `<span class="error-badge ${s.cls}">${s.text}</span>`; };
 
   // Item da fila "Hoje"/"Próximas": tópico ou questão.
   function queueItem(item) {
     if (item.kind === 'topic') {
       return logCard({
         main: cardMain({
-          meta: [typeTag('target', 'Tópico'), dueBadge(item.nextReviewAt), strengthBadge(item.EF)],
+          meta: [typeTag('target', 'Tópico'), dueBadge(item.nextReviewAt), strengthBadge(item)],
           title: item.subject,
           detail: `${item.topic} · última rodada: ${formatDate(item.lastReviewedAt)}`,
         }),
-        actions: [chip('Registrar rodada', 'repeat', 'modal', { modal: 'round', subject: item.subject, topic: item.topic })],
+        actions: [chip('Registrar teste', 'repeat', 'modal', { modal: 'round', subject: item.subject, topic: item.topic })],
       });
     }
     return questionCard(item, { meta: [typeTag('image', 'Questão'), dueBadge(item.nextReviewAt)], actions: [redoChip(item)] });
@@ -273,6 +275,13 @@
       .sort((a, b) => a.nextReviewAt - b.nextReviewAt);
     const due = SC.interleaveBySubject(pending.filter((x) => x.nextReviewAt <= now));
     const upcoming = pending.filter((x) => x.nextReviewAt > now).slice(0, 10);
+    const drawn = (state.ui.draw || []).map((id) => state.topicReviews.find((t) => t.id === id)).filter(Boolean);
+    const drawHtml = state.topicReviews.some((t) => t.locked) ? `
+        <div class="section" style="margin-top:0.5rem">
+          <div class="review-section-title">${icon('repeat')}Sorteio semanal (tópicos travados)</div>
+          ${drawn.length ? cardList(drawn.map(queueItem)) : ''}
+          <div style="margin-top:0.5rem">${button('Sortear 5 tópicos', 'repeat', 'draw', {}, 'card-outline')}</div>
+        </div>` : '';
 
     return {
       dueCount: due.length,
@@ -283,27 +292,28 @@
         <div class="section" style="margin-top:0.5rem">
           <div class="review-section-title">${icon('clock')}Próximas revisões</div>
           ${cardList(upcoming.map(queueItem))}
-        </div>` : ''),
+        </div>` : '') + drawHtml,
     };
   }
 
   function reviewTopicsHtml() {
     const all = state.topicReviews;
-    const shown = applyFilters(all, 'topics').sort((a, b) => (a.nextReviewAt || 0) - (b.nextReviewAt || 0));
+    const shown = applyFilters(all, 'topics').sort((a, b) => (a.nextReviewAt || 9e15) - (b.nextReviewAt || 9e15));
     let list;
     if (all.length === 0) {
-      list = emptyState('target', 'Nenhum tópico acompanhado ainda', 'Registre uma rodada de questões (a 2ª rodada em diante — não a fixação do mesmo dia) para o motor começar a agendar as próximas.', button('Registrar rodada', 'plus', 'modal', { modal: 'round' }));
+      list = emptyState('target', 'Nenhum tópico acompanhado ainda', 'Registre um teste frio (sem consulta, no tempo, questões inéditas). Passou em 3 testes espaçados (hoje, 14 dias, 60 dias) = tópico travado.', button('Registrar teste', 'plus', 'modal', { modal: 'round' }));
     } else if (shown.length === 0) {
       list = emptyState('filter', 'Nenhum tópico corresponde ao filtro');
     } else {
       list = cardList(shown.map((t) => logCard({
         main: cardMain({
-          meta: [dueBadge(t.nextReviewAt), strengthBadge(t.EF), `<span class="log-card-subject">${plural(t.totalRounds, 'rodada', 'rodadas')}</span>`],
+          meta: [dueBadge(t.nextReviewAt), strengthBadge(t), `<span class="log-card-subject">${plural(t.totalRounds, 'rodada', 'rodadas')}</span>`],
           title: t.subject,
-          detail: `${t.topic} · última: ${formatDate(t.lastReviewedAt)} · próxima: ${formatDate(t.nextReviewAt)}`,
+          detail: `${t.topic} · último teste: ${formatDate(t.lastReviewedAt)} · próximo: ${t.nextReviewAt ? formatDate(t.nextReviewAt) : '— (sorteio semanal)'}`,
         }),
         actions: [
-          chip('Nova rodada', 'repeat', 'modal', { modal: 'round', subject: t.subject, topic: t.topic }),
+          chip('Novo teste', 'repeat', 'modal', { modal: 'round', subject: t.subject, topic: t.topic }),
+          ...(t.locked && (t.level || 1) < 3 ? [chip('Aprofundar', 'target', 'modal', { modal: 'round', subject: t.subject, topic: t.topic, level: (t.level || 1) + 1 })] : []),
           chip('Excluir', 'trash', 'remove', { col: 'topicReviews', id: t.id, confirm: 'Excluir este tópico e o histórico dele?' }, 'danger'),
         ],
       })));
@@ -362,7 +372,7 @@
       </div>`;
 
     return `<div class="screen">
-      ${screenHeader('Revisão de Questões', 'Motor de repetição espaçada para tópicos e questões que valem uma nova rodada.', button('Registrar rodada', 'plus', 'modal', { modal: 'round' }))}
+      ${screenHeader('Revisão', 'Tópicos sobem de nível por teste frio; questões erradas voltam por repetição espaçada.', button('Registrar teste', 'plus', 'modal', { modal: 'round' }))}
       <div class="review-stats-row">
         ${stat(today.dueCount, 'Para revisar hoje', today.dueCount > 0)}
         ${stat(state.topicReviews.length, 'Tópicos acompanhados')}
@@ -378,10 +388,38 @@
   }
 
   // Ordem = ordem das abas de navegação.
+
+  // ---------- SIMULADOS ----------
+  function mockScreen() {
+    const exams = state.mockExams.slice().sort((a, b) => b.date.localeCompare(a.date));
+    const pct = (c, t) => (t ? Math.round((100 * c) / t) : 0);
+    const total = (e) => pct(e.rows.reduce((s, r) => s + r.correct, 0), e.rows.reduce((s, r) => s + r.total, 0));
+    const list = exams.length === 0
+      ? emptyState('target', 'Nenhum simulado ainda', 'Faça uma prova completa e cronometrada (use as provas recentes do ITA) a cada 2–3 semanas e registre o acerto por matéria.', button('Registrar simulado', 'plus', 'modal', { modal: 'mock' }))
+      : cardList(exams.map((e, i) => {
+        const d = exams[i + 1] ? total(e) - total(exams[i + 1]) : null;
+        return logCard({
+          main: cardMain({
+            meta: [`<span class="error-badge error-badge-violet">${total(e)}%</span>`, d === null ? '' : `<span class="log-card-subject">${d >= 0 ? '+' : ''}${d} pp vs. anterior</span>`],
+            title: e.name,
+            detail: [e.date].concat(e.rows.map((r) => `${esc(r.subject)} ${pct(r.correct, r.total)}%`)).concat(e.minutes ? [e.minutes + ' min'] : []).join(' · '),
+          }),
+          actions: [chip('Excluir', 'trash', 'remove', { col: 'mockExams', id: e.id, confirm: 'Excluir este simulado?' }, 'danger')],
+        });
+      }));
+    const causes = ERROR_TYPES.map((t) => [t[1], state.errorLogs.filter((x) => x.errorType === t[0]).length]).filter((c) => c[1]);
+    return `<div class="screen">
+      ${screenHeader('Simulados', 'A régua: prova completa, cronometrada, comparada com o simulado anterior.', button('Registrar simulado', 'plus', 'modal', { modal: 'mock' }))}
+      ${causes.length ? `<div class="review-section-title">${icon('alertTriangle')}Causas dos erros (Error Log)</div><div style="display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:1rem">${causes.map((c) => `<span class="error-badge error-badge-neutral">${esc(c[0])}: ${c[1]}</span>`).join('')}</div>` : ''}
+      ${list}
+    </div>`;
+  }
+
   SC.screens.dashboard = { label: 'Study Cycle', icon: 'layoutDashboard', render: dashboardScreen };
   SC.screens['study-log'] = { label: 'Study Log', icon: 'bookMarked', render: studyLogScreen };
   SC.screens['error-log'] = { label: 'Error Log', icon: 'alertTriangle', render: errorLogScreen };
   SC.screens['question-review'] = { label: 'Revisão', icon: 'repeat', render: reviewScreen };
+  SC.screens.mocks = { label: 'Simulados', icon: 'target', render: mockScreen };
 
   Object.assign(SC, { STUDY_CATEGORIES, CATEGORY_LABEL, CATEGORY_ICON, ERROR_TYPES, studyLogCard });
 })();

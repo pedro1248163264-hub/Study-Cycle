@@ -235,7 +235,7 @@
         ${subjectField({ value: err ? err.subject : (state.subjects[0] || {}).name || '', custom: true })}
         ${inputField({ name: 'topic', label: 'Tópico', value: err ? err.topic : '', placeholder: 'ex: Limites', bold: true })}
         ${inputField({ name: 'description', label: 'Descrição', value: err ? err.description : '', placeholder: 'O que deu errado?', rows: 3 })}
-        ${selectField({ name: 'errorType', label: 'Tipo de erro', value: err ? err.errorType : SC.ERROR_TYPES[0][0], options: SC.ERROR_TYPES.map((t) => [t[0], t[1]]) })}
+        ${selectField({ name: 'errorType', label: 'Tipo de erro', value: err ? err.errorType : SC.ERROR_TYPES[0][0], options: SC.ERROR_TYPES.filter((t) => !t[3]).map((t) => [t[0], t[1]]) })}
         ${formActions({ save: err ? 'Salvar' : 'Registrar erro' })}`,
       wire: () => bindForm({
         validate: (v) => !!(v.subject && v.topic && v.description),
@@ -245,29 +245,52 @@
   };
 
   // ---------- REVISÃO: REGISTRAR RODADA ----------
-  SC.modals.round = (m) => ({
-    title: 'Registrar rodada de questões',
-    body: `
-      ${subjectField({ value: m.subject || '', custom: true })}
-      ${inputField({ name: 'topic', label: 'Tópico', value: m.topic || '', placeholder: 'ex: Cinemática', bold: true, help: 'Se já existir um tópico com essa matéria + esse nome, a rodada entra no histórico dele. Senão, cria um novo.' })}
-      ${inputField({ name: 'count', label: 'Quantas questões você fez', type: 'number', placeholder: 'ex: 12', attrs: 'min="1"' })}
-      ${inputField({ name: 'wrong', label: 'Quantas você errou', type: 'number', placeholder: 'ex: 3', attrs: 'min="0"' })}
-      ${ratingRow('difficulty', 'Dificuldade sentida', 3, 'Muito difícil', 'Muito fácil')}
-      ${formActions({ save: 'Registrar rodada' })}`,
-    wire: () => bindForm({
-      validate(v) {
-        const count = parseInt(v.count, 10), wrong = parseInt(v.wrong, 10);
-        if (!(v.subject && v.topic && count > 0 && wrong >= 0)) return false;
-        return wrong > count ? 'O número de erradas não pode ser maior que o total de questões.' : true;
-      },
-      onSave: (v) => commit(() => {
-        const norm = (s) => s.trim().toLowerCase();
-        const existing = state.topicReviews.find((t) => norm(t.subject) === norm(v.subject) && norm(t.topic) === norm(v.topic));
-        const base = existing || { id: uid(), subject: v.subject, topic: v.topic, n: 0, EF: 2.5, intervalDays: 1, totalRounds: 0, history: [] };
-        col.put('topicReviews', SC.applyTopicRound(base, int(v.count), int(v.wrong), int(v.difficulty, 3)));
+  SC.modals.round = (m) => {
+    const norm = (s) => String(s || '').trim().toLowerCase();
+    const ex = state.topicReviews.find((t) => norm(t.subject) === norm(m.subject) && norm(t.topic) === norm(m.topic));
+    return {
+      title: 'Registrar teste de tópico',
+      body: `
+        ${subjectField({ value: m.subject || '', custom: true })}
+        ${inputField({ name: 'topic', label: 'Tópico', value: m.topic || '', placeholder: 'ex: Cinemática', bold: true, help: 'Mesma matéria + mesmo nome = continua o mesmo tópico.' })}
+        ${selectField({ name: 'level', label: 'Nível das questões', value: String(m.level || (ex && ex.level) || 1), options: [['1', '1 · Base (aplicação direta)'], ['2', '2 · Vestibular difícil'], ['3', '3 · ITA/IME']] })}
+        ${selectField({ name: 'cold', label: 'Foi teste frio?', value: '1', options: [['1', 'Sim: sem consulta, no tempo, questões inéditas'], ['0', 'Não: foi treino/estudo (não conta para o domínio)']] })}
+        ${inputField({ name: 'count', label: 'Quantas questões', type: 'number', placeholder: 'ex: 8', attrs: 'min="1"' })}
+        ${inputField({ name: 'wrong', label: 'Quantas errou', type: 'number', placeholder: 'ex: 1', attrs: 'min="0"', help: 'Aprovação: acerto de 80% ou mais em teste frio.' })}
+        ${formActions({ save: 'Registrar teste' })}`,
+      wire: () => bindForm({
+        validate(v) {
+          const count = parseInt(v.count, 10), wrong = parseInt(v.wrong, 10);
+          if (!(v.subject && v.topic && count > 0 && wrong >= 0)) return false;
+          return wrong > count ? 'O número de erradas não pode ser maior que o total de questões.' : true;
+        },
+        onSave: (v) => commit(() => {
+          const base = ex || { id: uid(), subject: v.subject, topic: v.topic, level: 1, passes: 0, locked: false, nextReviewAt: null, totalRounds: 0, history: [] };
+          col.put('topicReviews', SC.applyTopicRound(base, int(v.count), int(v.wrong), int(v.level, 1), v.cold === '1'));
+        }),
       }),
-    }),
-  });
+    };
+  };
+
+  SC.modals.mock = () => {
+    const rows = (v) => state.subjects.map((s) => {
+      const m = /^\s*(\d+)\s*\/\s*(\d+)\s*$/.exec(v['r_' + s.id] || '');
+      return m ? { subject: s.name, correct: +m[1], total: +m[2] } : null;
+    }).filter(Boolean);
+    return {
+      title: 'Registrar simulado',
+      body: `
+        ${inputField({ name: 'name', label: 'Nome', placeholder: 'ex: ITA 2023 · 1ª fase', bold: true })}
+        ${inputField({ name: 'date', label: 'Data', type: 'date', value: new Date().toISOString().slice(0, 10) })}
+        ${inputField({ name: 'minutes', label: 'Tempo gasto em minutos (opcional)', type: 'number', attrs: 'min="1"' })}
+        ${state.subjects.length ? state.subjects.map((s) => inputField({ name: 'r_' + s.id, label: SC.esc(s.name) + ' · acertos/total', placeholder: 'ex: 7/10' })).join('') : '<p>Cadastre matérias no Study Cycle primeiro.</p>'}
+        ${formActions({ save: 'Registrar simulado' })}`,
+      wire: () => bindForm({
+        validate: (v) => !!(v.name && v.date && rows(v).length && rows(v).every((r) => r.total > 0 && r.correct <= r.total)),
+        onSave: (v) => commit(() => col.put('mockExams', { id: uid(), name: v.name, date: v.date, minutes: int(v.minutes, 0), rows: rows(v) })),
+      }),
+    };
+  };
 
   // ---------- REVISÃO: SALVAR / EDITAR QUESTÃO ----------
   SC.modals.question = (m) => {

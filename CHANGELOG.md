@@ -2,6 +2,26 @@
 
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
+## [v14] — Escada de domínio, Simulados e causas de erro (preparação ITA)
+
+### Alterado
+- **Tópicos (Revisão)**: o SM-2 saiu e entrou a escada de domínio. Só conta um *teste frio* (sem consulta, no tempo, questões inéditas) com acerto >= 80%. 3 aprovações espaçadas (hoje, +14d, +60d) = **travado**. Reprovou: volta a 0/3 e refaz em 3 dias. Teste não frio é só registrado.
+- **Nível por tópico (1 base, 2 vestibular difícil, 3 ITA)**: "Aprofundar" reinicia a escada no nível seguinte (embasar e depois aprofundar). Dados antigos continuam abrindo (nível 1, 0/3).
+- **Tipos de erro**: lista nova (lacuna de teoria / sabia mas não viu o caminho / desatenção e conta / estourou o tempo / esqueci o conceito / outro). "Cálculo" e "Interpretação errada" ficam só nos dados antigos.
+
+### Adicionado
+- **Sorteio semanal**: na aba Hoje, sorteia 5 tópicos travados, misturando matérias; reprovar um travado o devolve a instável.
+- **Tela Simulados**: acerto por matéria, variação contra o simulado anterior, tempo e contagem de causas de erro.
+
+### Removido
+- Dificuldade sentida (1–5) e EF/intervalos crescentes nos tópicos. O SM-2 continua só nas questões salvas.
+- Cópias mortas na raiz e `js/app.js`, que o v13 já dizia ter removido.
+
+### Arquivos
+`js/logic.js`, `js/store.js` (`mockExams`), `js/screens.js`, `js/modals.js`, `js/main.js` (`draw`).
+
+---
+
 ## [v13] — Reorganização geral (sem mudar o que o app faz)
 
 ### Contexto

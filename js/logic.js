@@ -178,15 +178,35 @@
     });
   }
 
-  // Rodada de tópico: nota = média entre (1 - taxa de erro) e a dificuldade sentida.
-  function applyTopicRound(topic, questionsCount, wrongCount, feltDifficulty) {
-    const errorRate = questionsCount > 0 ? Math.min(1, wrongCount / questionsCount) : 0;
-    const fromErrors = Math.max(0, Math.min(5, Math.round(5 - errorRate * 5)));
-    const quality = Math.round((fromErrors + feltDifficulty) / 2);
-    return Object.assign(
-      review(topic, quality, { questionsCount, wrongCount, feltDifficulty }),
-      { totalRounds: (topic.totalRounds || 0) + 1 }
-    );
+  // Escada de domínio (tópicos): só um TESTE FRIO (sem consulta, no tempo,
+  // questões inéditas) com acerto >= PASS_RATE conta. 3 aprovações espaçadas
+  // (hoje -> +14d -> +60d) = "travado". Reprovou: volta a 0 e refaz em 3 dias.
+  // `level` (1 base, 2 vestibular difícil, 3 ITA) permite embasar e depois
+  // aprofundar: mudar o nível reinicia a escada, mantendo o histórico.
+  const PASS_RATE = 0.8, GATE_DAYS = [14, 60], RETRY_DAYS = 3;
+  function applyTopicRound(topic, count, wrong, level, cold) {
+    const now = Date.now();
+    const t = Object.assign({}, topic, { totalRounds: (topic.totalRounds || 0) + 1, passes: topic.passes || 0, level: topic.level || 1 });
+    if (level && level !== t.level) { t.level = level; t.passes = 0; t.locked = false; t.nextReviewAt = null; }
+    const pass = !!cold && count > 0 && 1 - wrong / count >= PASS_RATE;
+    if (cold) {
+      t.passes = pass ? Math.min(3, t.passes + 1) : 0;
+      t.locked = t.passes >= 3;
+      t.nextReviewAt = t.locked ? null : now + (pass ? GATE_DAYS[t.passes - 1] : RETRY_DAYS) * MS_PER_DAY;
+    } else if (!t.nextReviewAt && !t.locked) t.nextReviewAt = now + RETRY_DAYS * MS_PER_DAY;
+    t.lastReviewedAt = now;
+    t.history = (t.history || []).concat([{ at: now, count, wrong, level: t.level, cold: !!cold, pass: cold ? pass : null }]);
+    return t;
+  }
+  function topicStatus(t) {
+    const lv = t.level || 1;
+    if (t.locked) return { text: 'Travado · nível ' + lv, cls: 'error-badge-green' };
+    const p = t.passes || 0;
+    return { text: 'Instável · nível ' + lv + ' · ' + p + '/3', cls: p ? 'error-badge-amber' : 'error-badge-rose' };
+  }
+  // Sorteio misto entre matérias de tópicos já travados (revisão passiva).
+  function drawLocked(topics, n) {
+    return interleaveBySubject(topics.filter((t) => t.locked).sort(() => Math.random() - 0.5)).slice(0, n);
   }
 
   // Refazer questão: 'wrong' | 'hard' | 'easy'.
@@ -233,7 +253,7 @@
 
   Object.assign(SC, {
     calculateAllocations, generateSequence, getDerived,
-    GRADUATE_AFTER_N, sm2Step, applyTopicRound, applyQuestionRedo,
+    GRADUATE_AFTER_N, sm2Step, applyTopicRound, applyQuestionRedo, topicStatus, drawLocked, PASS_RATE,
     interleaveBySubject, efLabel, calendarDayDiff, formatDate,
   });
 })();

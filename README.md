@@ -11,7 +11,8 @@ Site estático (HTML + CSS + JS puro, **sem build**) para organizar ciclos de es
 | **Study Cycle** | Decide quanto e em que ordem estudar cada matéria na semana. |
 | **Study Log** | O que você está estudando agora e onde parou (livro, vídeo, questões). |
 | **Error Log** | O que você errou e por quê, com filtros. |
-| **Revisão** | Repetição espaçada (SM-2): tópicos por rodada e questões individuais (texto/imagem, OCR, resolução). |
+| **Simulados** | Provas completas por matéria, tempo e comparação com o simulado anterior. |
+| **Revisão** | Escada de domínio para tópicos e SM-2 para questões individuais (texto/imagem, OCR, resolução). |
 
 As telas são independentes: nada nelas altera a alocação de horas do Study Cycle.
 
@@ -65,7 +66,7 @@ Matéria (lista ou texto livre), tópico, descrição e tipo de erro (7 opções
 
 ### Revisão
 Dois motores independentes com a mesma recorrência SM-2; só muda como a nota 0–5 é obtida.
-- **Tópicos**: informa questões feitas, erradas e dificuldade sentida (1–5); nota = média entre taxa de acerto e dificuldade.
+- **Tópicos**: escada de domínio. Teste frio com acerto >= 80% conta; 3 aprovações (hoje, +14d, +60d) travam o tópico; reprovar zera. Nível 1/2/3 permite embasar e depois aprofundar. Tópicos travados voltam só pelo sorteio semanal.
 - **Questões**: bookmark de questão (imagem e/ou texto); ao refazer: Errei / Difícil / Fácil (1/3/5). 4 acertos seguidos "graduam" a questão. "Fácil" na 1ª vez agenda 3 dias.
 - **Fila "Hoje"**: vencidos de ambos, em round-robin por matéria (interleaving). Teto de intervalo: 365 dias.
 - Rodadas de fixação do mesmo dia **não** devem ser registradas (decisão de uso).

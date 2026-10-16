@@ -21,6 +21,7 @@
     studyLogs: 'array',
     errorLogs: 'array',
     topicReviews: 'array',
+    mockExams: 'array',
     questionBank: 'array',
     isDark: 'boolean',
   };
@@ -42,7 +43,8 @@
     currentBlock: null, // { subjectId, hoursDone } — bloco de horas seguidas em andamento
     studyLogs: [],     // { id, name, subject, category, status, ...campos da categoria }
     errorLogs: [],     // { id, subject, topic, description, errorType }
-    topicReviews: [],  // { id, subject, topic, n, EF, intervalDays, lastReviewedAt, nextReviewAt, totalRounds, history[] }
+    mockExams: [],     // { id, name, date, minutes, rows: [{ subject, correct, total }] }
+    topicReviews: [],  // { level, passes, locked, (antigos: n, EF) } + { id, subject, topic, n, EF, intervalDays, lastReviewedAt, nextReviewAt, totalRounds, history[] }
     questionBank: [],  // { id, subject, topic, statementText, imageData, answerKey, resolutionText, resolutionImageData, createdAt, n, EF, intervalDays, lastReviewedAt, nextReviewAt, retired, history[] }
     isDark: false,
 
@@ -56,6 +58,7 @@
     ui: {
       screen: 'dashboard',
       studyLogTab: 'active',   // 'active' | 'completed'
+      draw: [],                // ids do sorteio semanal
       reviewTab: 'today',      // 'today' | 'topics' | 'questions'
       questionSubTab: 'active', // 'active' | 'graduated'
       filters: { log: {}, error: {}, topics: {}, questions: {} },
