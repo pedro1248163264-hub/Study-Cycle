@@ -6,7 +6,7 @@
   'use strict';
   const SC = window.SC;
   const { state, esc, icon, chip, button, screenHeader, emptyState, tabs, logCard, cardMain, cardList,
-    filterBar, applyFilters, subjectFilterOptions, dueBadge, formatDate, efLabel } = Object.assign({}, SC);
+    filterBar, applyFilters, subjectFilterOptions, dueBadge, formatDate } = Object.assign({}, SC);
 
   const STUDY_CATEGORIES = ['Book', 'Video', 'Question'];
   const CATEGORY_LABEL = { Book: 'Livro', Video: 'Vídeo', Question: 'Questões' };
@@ -233,26 +233,30 @@
     </div>`;
   }
 
-  // ---------- REVISÃO DE QUESTÕES ----------
+  // ---------- REVISÃO: LISTAS DE EXERCÍCIOS + QUESTÕES ----------
   const typeTag = (iconName, label) => `<span class="rev-type-tag">${icon(iconName)}${label}</span>`;
-  const strengthBadge = (t) => { const s = SC.topicStatus(t); return `<span class="error-badge ${s.cls}">${s.text}</span>`; };
 
-  // Item da fila "Hoje"/"Próximas": tópico ou questão.
-  function queueItem(item) {
-    if (item.kind === 'topic') {
-      return logCard({
-        main: cardMain({
-          meta: [typeTag('target', 'Tópico'), dueBadge(item.nextReviewAt), strengthBadge(item)],
-          title: item.subject,
-          detail: `${item.topic} · última rodada: ${formatDate(item.lastReviewedAt)}`,
-        }),
-        actions: [chip('Registrar teste', 'repeat', 'modal', { modal: 'round', subject: item.subject, topic: item.topic })],
-      });
-    }
-    return questionCard(item, { meta: [typeTag('image', 'Questão'), dueBadge(item.nextReviewAt)], actions: [redoChip(item)] });
-  }
+  // Resposta de "como foi?" ao refazer uma lista (mesma nota 1/3/5 das questões).
+  const LIST_RESULT = { wrong: 'Foi mal', hard: 'Mais ou menos', easy: 'Foi bem' };
 
   const redoChip = (q) => chip('Refazer', 'repeat', 'modal', { modal: 'redo', id: q.id });
+  const listRedoChip = (l) => chip('Refazer', 'repeat', 'modal', { modal: 'listRedo', id: l.id });
+
+  // Cartão de lista: matéria · nº de exercícios · como foi da última vez.
+  function listCard(l, { meta, actions }) {
+    const last = (l.history || []).slice(-1)[0];
+    const lastText = last && LIST_RESULT[last.result]
+      ? `última vez: ${LIST_RESULT[last.result].toLowerCase()} (${formatDate(l.lastReviewedAt)})`
+      : 'ainda não revisada';
+    return logCard({
+      main: cardMain({
+        meta,
+        title: l.name,
+        detail: [l.subject, plural(l.total, 'exercício', 'exercícios'), lastText].filter(Boolean).join(' · '),
+      }),
+      actions: (l.pdf ? [chip('Ver PDF', 'eye', 'modal', { modal: 'listPdf', id: l.id })] : []).concat(actions),
+    });
+  }
 
   function questionCard(q, { meta, actions, title }) {
     return logCard({
@@ -266,59 +270,65 @@
     });
   }
 
+  // Item da fila "Hoje"/"Próximas": lista ou questão.
+  function queueItem(item) {
+    if (item.kind === 'list') {
+      return listCard(item, { meta: [typeTag('bookMarked', 'Lista'), dueBadge(item.nextReviewAt)], actions: [listRedoChip(item)] });
+    }
+    return questionCard(item, { meta: [typeTag('image', 'Questão'), dueBadge(item.nextReviewAt)], actions: [redoChip(item)] });
+  }
+
   function reviewTodayHtml() {
     const now = Date.now();
     const items = (list, kind) => list.map((x) => Object.assign({ kind }, x));
-    const pending = items(state.topicReviews, 'topic')
+    const pending = items(state.exerciseLists, 'list')
       .concat(items(state.questionBank.filter((q) => !q.retired), 'question'))
       .filter((x) => x.nextReviewAt)
       .sort((a, b) => a.nextReviewAt - b.nextReviewAt);
     const due = SC.interleaveBySubject(pending.filter((x) => x.nextReviewAt <= now));
     const upcoming = pending.filter((x) => x.nextReviewAt > now).slice(0, 10);
-    const drawn = (state.ui.draw || []).map((id) => state.topicReviews.find((t) => t.id === id)).filter(Boolean);
-    const drawHtml = state.topicReviews.some((t) => t.locked) ? `
-        <div class="section" style="margin-top:0.5rem">
-          <div class="review-section-title">${icon('repeat')}Sorteio semanal (tópicos travados)</div>
-          ${drawn.length ? cardList(drawn.map(queueItem)) : ''}
-          <div style="margin-top:0.5rem">${button('Sortear 5 tópicos', 'repeat', 'draw', {}, 'card-outline')}</div>
-        </div>` : '';
 
     return {
       dueCount: due.length,
       html: (due.length === 0
-        ? emptyState('checkCircle', 'Nada para revisar agora', 'Quando um tópico ou questão vencer, aparece aqui — misturado entre matérias de propósito, pra treinar o reconhecimento igual na prova.')
+        ? emptyState('checkCircle', 'Nada para revisar agora', 'Quando uma lista ou questão vencer, aparece aqui — misturadas entre matérias de propósito, pra treinar o reconhecimento igual na prova.')
         : cardList(due.map(queueItem)))
         + (upcoming.length ? `
         <div class="section" style="margin-top:0.5rem">
           <div class="review-section-title">${icon('clock')}Próximas revisões</div>
           ${cardList(upcoming.map(queueItem))}
-        </div>` : '') + drawHtml,
+        </div>` : ''),
     };
   }
 
-  function reviewTopicsHtml() {
-    const all = state.topicReviews;
-    const shown = applyFilters(all, 'topics').sort((a, b) => (a.nextReviewAt || 9e15) - (b.nextReviewAt || 9e15));
+  function reviewListsHtml() {
+    const all = state.exerciseLists;
+    const shown = applyFilters(all, 'lists').sort((a, b) => (a.nextReviewAt || 0) - (b.nextReviewAt || 0));
     let list;
     if (all.length === 0) {
-      list = emptyState('target', 'Nenhum tópico acompanhado ainda', 'Registre um teste frio (sem consulta, no tempo, questões inéditas). Passou em 3 testes espaçados (hoje, 14 dias, 60 dias) = tópico travado.', button('Registrar teste', 'plus', 'modal', { modal: 'round' }));
+      list = emptyState('bookMarked', 'Nenhuma lista no ciclo', 'Adicione uma lista de exercícios e quantos exercícios ela tem. Ela volta para você refazer em intervalos crescentes, e a cada vez o app pergunta como foi.', button('Adicionar lista', 'plus', 'modal', { modal: 'exerciseList' }));
     } else if (shown.length === 0) {
-      list = emptyState('filter', 'Nenhum tópico corresponde ao filtro');
+      list = emptyState('filter', 'Nenhuma lista corresponde ao filtro');
     } else {
-      list = cardList(shown.map((t) => logCard({
-        main: cardMain({
-          meta: [dueBadge(t.nextReviewAt), strengthBadge(t), `<span class="log-card-subject">${plural(t.totalRounds, 'rodada', 'rodadas')}</span>`],
-          title: t.subject,
-          detail: `${t.topic} · último teste: ${formatDate(t.lastReviewedAt)} · próximo: ${t.nextReviewAt ? formatDate(t.nextReviewAt) : '— (sorteio semanal)'}`,
-        }),
+      list = cardList(shown.map((l) => listCard(l, {
+        meta: [
+          dueBadge(l.nextReviewAt),
+          `<span class="log-card-subject">${plural((l.history || []).length, 'revisão', 'revisões')}</span>`,
+        ],
         actions: [
-          chip('Novo teste', 'repeat', 'modal', { modal: 'round', subject: t.subject, topic: t.topic }),
-          ...(t.locked && (t.level || 1) < 3 ? [chip('Aprofundar', 'target', 'modal', { modal: 'round', subject: t.subject, topic: t.topic, level: (t.level || 1) + 1 })] : []),
-          chip('Excluir', 'trash', 'remove', { col: 'topicReviews', id: t.id, confirm: 'Excluir este tópico e o histórico dele?' }, 'danger'),
+          listRedoChip(l),
+          chip('Editar', 'edit', 'modal', { modal: 'exerciseList', id: l.id }),
+          chip('Excluir', 'trash', 'remove', { col: 'exerciseLists', id: l.id, confirm: 'Excluir esta lista e o histórico dela?' }, 'danger'),
         ],
       })));
     }
-    return (all.length ? filterBar('topics', [{ field: 'subject', all: 'Todas as matérias', options: subjectFilterOptions(all).map((s) => [s, s]) }]) : '') + list;
+    return `
+      <div class="section-header" style="margin-top:-0.5rem">
+        <div></div>
+        ${button('Adicionar lista', 'plus', 'modal', { modal: 'exerciseList' }, 'card-outline')}
+      </div>
+      ${all.length ? filterBar('lists', [{ field: 'subject', all: 'Todas as matérias', options: subjectFilterOptions(all).map((s) => [s, s]) }], shown.length) : ''}
+      ${list}`;
   }
 
   function reviewQuestionsHtml() {
@@ -364,7 +374,7 @@
     const tab = state.ui.reviewTab;
     const today = reviewTodayHtml();
     const activeQuestions = state.questionBank.filter((q) => !q.retired).length;
-    const body = tab === 'topics' ? reviewTopicsHtml() : tab === 'questions' ? reviewQuestionsHtml() : today.html;
+    const body = tab === 'lists' ? reviewListsHtml() : tab === 'questions' ? reviewQuestionsHtml() : today.html;
     const stat = (num, label, due) => `
       <div class="review-stat-chip${due ? ' is-due' : ''}">
         <span class="review-stat-chip-num">${num}</span>
@@ -372,15 +382,15 @@
       </div>`;
 
     return `<div class="screen">
-      ${screenHeader('Revisão', 'Tópicos sobem de nível por teste frio; questões erradas voltam por repetição espaçada.', button('Registrar teste', 'plus', 'modal', { modal: 'round' }))}
+      ${screenHeader('Revisão', 'Listas de exercícios e questões voltam em ciclo; toda vez você diz como foi.', button('Adicionar lista', 'plus', 'modal', { modal: 'exerciseList' }))}
       <div class="review-stats-row">
         ${stat(today.dueCount, 'Para revisar hoje', today.dueCount > 0)}
-        ${stat(state.topicReviews.length, 'Tópicos acompanhados')}
+        ${stat(state.exerciseLists.length, 'Listas no ciclo')}
         ${stat(activeQuestions, 'Questões no banco')}
       </div>
       ${tabs('reviewTab', [
         { key: 'today', label: 'Hoje' },
-        { key: 'topics', label: 'Tópicos', count: state.topicReviews.length },
+        { key: 'lists', label: 'Listas', count: state.exerciseLists.length },
         { key: 'questions', label: 'Questões', count: activeQuestions },
       ])}
       ${body}
@@ -421,5 +431,5 @@
   SC.screens['question-review'] = { label: 'Revisão', icon: 'repeat', render: reviewScreen };
   SC.screens.mocks = { label: 'Simulados', icon: 'target', render: mockScreen };
 
-  Object.assign(SC, { STUDY_CATEGORIES, CATEGORY_LABEL, CATEGORY_ICON, ERROR_TYPES, studyLogCard });
+  Object.assign(SC, { STUDY_CATEGORIES, CATEGORY_LABEL, CATEGORY_ICON, ERROR_TYPES, LIST_RESULT, studyLogCard });
 })();

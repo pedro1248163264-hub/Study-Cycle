@@ -32,6 +32,7 @@
     remove(el) {
       if (el.dataset.confirm && !confirm(el.dataset.confirm)) return;
       col.remove(el.dataset.col, el.dataset.id);
+      if (el.dataset.col === 'exerciseLists') SC.files.remove(el.dataset.id); // PDF guardado à parte
       persist();
     },
     patch(el) {
@@ -45,13 +46,16 @@
       persist();
     },
 
-    // Questão do banco de revisão
+    // Revisão: questão do banco e lista de exercícios
     revive(el) { col.patch('questionBank', el.dataset.id, { retired: false, n: 0, nextReviewAt: Date.now() }); persist(); },
-    draw() { state.ui.draw = SC.drawLocked(state.topicReviews, 5).map((t) => t.id); render(); },
     reveal(el) { state.modal[el.dataset.what] = true; render(); }, // mostra gabarito/resolução
+    // data-col: 'questionBank' (padrão) ou 'exerciseLists'. A nota vem do botão tocado.
     grade(el) {
-      const q = col.find('questionBank', el.dataset.id);
-      commit(() => col.put('questionBank', SC.applyQuestionRedo(q, el.dataset.result)));
+      const name = el.dataset.col || 'questionBank';
+      const item = col.find(name, el.dataset.id);
+      if (!item) return;
+      const apply = name === 'exerciseLists' ? SC.applyListRedo : SC.applyQuestionRedo;
+      commit(() => col.put(name, apply(item, el.dataset.result)));
     },
 
     // Cabeçalho

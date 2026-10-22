@@ -1612,3 +1612,26 @@ html.dark .error-badge-green { background-color: rgba(6, 95, 70, 0.25); color: #
 
 /* Caixa de avisos dos formulários: só ocupa espaço quando há mensagem. */
 [data-error]:empty { display: none; }
+
+/* visualizador de PDF das listas (Revisão) */
+.modal.modal-wide { max-width: 56rem; }
+.pdf-frame {
+  width: 100%;
+  height: 65vh;
+  min-height: 20rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background-color: #fff;
+  margin-bottom: 0.75rem;
+}
+.pdf-attached {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  font-size: 0.875rem;
+}
+.pdf-attached span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

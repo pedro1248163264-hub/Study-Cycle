@@ -141,8 +141,8 @@
   }
 
   // ---------- REPETIÇÃO ESPAÇADA (SM-2) ----------
-  // Tópicos (rodadas agregadas) e Questões (bookmark individual) usam a
-  // mesma recorrência; só muda como a nota 0-5 é obtida.
+  // Questões (bookmark individual) e listas de exercícios usam a mesma
+  // recorrência; a nota 0-5 vem sempre do botão que você toca (mal/médio/bem).
   const MS_PER_DAY = 24 * 60 * 60 * 1000;
   const MAX_INTERVAL_DAYS = 365;
   const GRADUATE_AFTER_N = 4; // acertos seguidos até a questão sair da fila ativa
@@ -178,42 +178,18 @@
     });
   }
 
-  // Escada de domínio (tópicos): só um TESTE FRIO (sem consulta, no tempo,
-  // questões inéditas) com acerto >= PASS_RATE conta. 3 aprovações espaçadas
-  // (hoje -> +14d -> +60d) = "travado". Reprovou: volta a 0 e refaz em 3 dias.
-  // `level` (1 base, 2 vestibular difícil, 3 ITA) permite embasar e depois
-  // aprofundar: mudar o nível reinicia a escada, mantendo o histórico.
-  const PASS_RATE = 0.8, GATE_DAYS = [14, 60], RETRY_DAYS = 3;
-  function applyTopicRound(topic, count, wrong, level, cold) {
-    const now = Date.now();
-    const t = Object.assign({}, topic, { totalRounds: (topic.totalRounds || 0) + 1, passes: topic.passes || 0, level: topic.level || 1 });
-    if (level && level !== t.level) { t.level = level; t.passes = 0; t.locked = false; t.nextReviewAt = null; }
-    const pass = !!cold && count > 0 && 1 - wrong / count >= PASS_RATE;
-    if (cold) {
-      t.passes = pass ? Math.min(3, t.passes + 1) : 0;
-      t.locked = t.passes >= 3;
-      t.nextReviewAt = t.locked ? null : now + (pass ? GATE_DAYS[t.passes - 1] : RETRY_DAYS) * MS_PER_DAY;
-    } else if (!t.nextReviewAt && !t.locked) t.nextReviewAt = now + RETRY_DAYS * MS_PER_DAY;
-    t.lastReviewedAt = now;
-    t.history = (t.history || []).concat([{ at: now, count, wrong, level: t.level, cold: !!cold, pass: cold ? pass : null }]);
-    return t;
-  }
-  function topicStatus(t) {
-    const lv = t.level || 1;
-    if (t.locked) return { text: 'Travado · nível ' + lv, cls: 'error-badge-green' };
-    const p = t.passes || 0;
-    return { text: 'Instável · nível ' + lv + ' · ' + p + '/3', cls: p ? 'error-badge-amber' : 'error-badge-rose' };
-  }
-  // Sorteio misto entre matérias de tópicos já travados (revisão passiva).
-  function drawLocked(topics, n) {
-    return interleaveBySubject(topics.filter((t) => t.locked).sort(() => Math.random() - 0.5)).slice(0, n);
-  }
-
   // Refazer questão: 'wrong' | 'hard' | 'easy'.
   function applyQuestionRedo(q, result) {
     const next = review(q, REDO_QUALITY[result], { result });
     next.retired = next.n >= GRADUATE_AFTER_N;
     return next;
+  }
+
+  // Refazer lista de exercícios: 'wrong' | 'hard' | 'easy'. Diferente da
+  // questão, a lista NUNCA se aposenta: fica no ciclo, e o intervalo cresce
+  // a cada "bem" e volta para 1 dia a cada "mal" (até o teto de 365 dias).
+  function applyListRedo(list, result) {
+    return review(list, REDO_QUALITY[result], { result });
   }
 
   // Round-robin entre matérias: a fila do dia mistura matérias em vez de
@@ -236,12 +212,6 @@
     return result;
   }
 
-  function efLabel(EF) {
-    if (EF >= 2.3) return { text: 'Consolidado', cls: 'error-badge-green' };
-    if (EF >= 1.8) return { text: 'Em progresso', cls: 'error-badge-amber' };
-    return { text: 'Frágil', cls: 'error-badge-rose' };
-  }
-
   // Diferença em DIAS DE CALENDÁRIO (meia-noite a meia-noite), não em blocos
   // de 24h — senão uma questão criada agora aparecia como "Atrasada 1d".
   function calendarDayDiff(targetMs, fromMs) {
@@ -253,7 +223,7 @@
 
   Object.assign(SC, {
     calculateAllocations, generateSequence, getDerived,
-    GRADUATE_AFTER_N, sm2Step, applyTopicRound, applyQuestionRedo, topicStatus, drawLocked, PASS_RATE,
-    interleaveBySubject, efLabel, calendarDayDiff, formatDate,
+    GRADUATE_AFTER_N, sm2Step, applyQuestionRedo, applyListRedo,
+    interleaveBySubject, calendarDayDiff, formatDate,
   });
 })();

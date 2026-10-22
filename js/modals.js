@@ -244,31 +244,139 @@
     };
   };
 
-  // ---------- REVISÃO: REGISTRAR RODADA ----------
-  SC.modals.round = (m) => {
-    const norm = (s) => String(s || '').trim().toLowerCase();
-    const ex = state.topicReviews.find((t) => norm(t.subject) === norm(m.subject) && norm(t.topic) === norm(m.topic));
+  // ---------- REVISÃO: LISTA DE EXERCÍCIOS (adicionar / editar) ----------
+  const MAX_PDF_MB = 25;
+  const fmtSize = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');
+
+  SC.modals.exerciseList = (m) => {
+    const l = m.id ? col.find('exerciseLists', m.id) : null;
+    if (m.id && !l) return null;
+    const id = l ? l.id : uid();
     return {
-      title: 'Registrar teste de tópico',
+      title: l ? 'Editar lista' : 'Adicionar lista de exercícios',
       body: `
-        ${subjectField({ value: m.subject || '', custom: true })}
-        ${inputField({ name: 'topic', label: 'Tópico', value: m.topic || '', placeholder: 'ex: Cinemática', bold: true, help: 'Mesma matéria + mesmo nome = continua o mesmo tópico.' })}
-        ${selectField({ name: 'level', label: 'Nível das questões', value: String(m.level || (ex && ex.level) || 1), options: [['1', '1 · Base (aplicação direta)'], ['2', '2 · Vestibular difícil'], ['3', '3 · ITA/IME']] })}
-        ${selectField({ name: 'cold', label: 'Foi teste frio?', value: '1', options: [['1', 'Sim: sem consulta, no tempo, questões inéditas'], ['0', 'Não: foi treino/estudo (não conta para o domínio)']] })}
-        ${inputField({ name: 'count', label: 'Quantas questões', type: 'number', placeholder: 'ex: 8', attrs: 'min="1"' })}
-        ${inputField({ name: 'wrong', label: 'Quantas errou', type: 'number', placeholder: 'ex: 1', attrs: 'min="0"', help: 'Aprovação: acerto de 80% ou mais em teste frio.' })}
-        ${formActions({ save: 'Registrar teste' })}`,
-      wire: () => bindForm({
-        validate(v) {
-          const count = parseInt(v.count, 10), wrong = parseInt(v.wrong, 10);
-          if (!(v.subject && v.topic && count > 0 && wrong >= 0)) return false;
-          return wrong > count ? 'O número de erradas não pode ser maior que o total de questões.' : true;
-        },
-        onSave: (v) => commit(() => {
-          const base = ex || { id: uid(), subject: v.subject, topic: v.topic, level: 1, passes: 0, locked: false, nextReviewAt: null, totalRounds: 0, history: [] };
-          col.put('topicReviews', SC.applyTopicRound(base, int(v.count), int(v.wrong), int(v.level, 1), v.cold === '1'));
-        }),
-      }),
+        ${inputField({ name: 'name', label: 'Nome da lista', value: l ? l.name : '', placeholder: 'ex: Lista 3 — Cinemática', bold: true })}
+        ${subjectField({ label: 'Matéria (opcional)', value: l ? l.subject || '' : '', none: 'Sem matéria' })}
+        ${inputField({ name: 'total', label: 'Quantos exercícios a lista tem', type: 'number', value: l ? l.total : '', placeholder: 'ex: 30', attrs: 'min="1"' })}
+        <div class="field">
+          <label>PDF da lista (opcional)</label>
+          <div data-pdf-area></div>
+          <p class="field-help">Fica guardado só neste aparelho (não vai para a nuvem). Máx. ${MAX_PDF_MB} MB.</p>
+        </div>
+        ${inputField({ name: 'notes', label: 'Observações (opcional)', value: l ? l.notes || '' : '', rows: 3, placeholder: 'Onde está a lista, página, link…' })}
+        ${l ? '' : '<p class="field-help">A lista entra na fila de hoje. Depois de refazê-la, o app pergunta como foi e agenda a próxima vez.</p>'}
+        ${formActions({ save: l ? 'Salvar alterações' : 'Adicionar lista' })}`,
+      wire() {
+        let pending = null;                 // PDF escolhido agora (ainda não gravado)
+        let removed = false;                // PDF atual marcado para remoção
+        let form;
+        const area = document.querySelector('[data-pdf-area]');
+
+        function showArea() {
+          const cur = pending ? { name: pending.name, size: pending.size } : (!removed && l && l.pdf) || null;
+          area.innerHTML = cur
+            ? `<div class="pdf-attached"><span>${icon('bookOpen', true)} ${esc(cur.name)} · ${fmtSize(cur.size)}</span>
+                 <button type="button" class="btn-chip btn-chip-danger" data-role="rm">${icon('x', true)}Remover</button></div>`
+            : `<label class="image-drop">${icon('bookOpen')} <span>Toque para escolher o PDF</span><input type="file" accept="application/pdf,.pdf"></label>`;
+          const rm = area.querySelector('[data-role="rm"]');
+          if (rm) rm.addEventListener('click', () => { pending = null; removed = true; showArea(); form.sync(); });
+          const input = area.querySelector('input[type="file"]');
+          if (input) input.addEventListener('change', () => {
+            const f = input.files && input.files[0];
+            if (!f) return;
+            if (!(f.type === 'application/pdf' || /\.pdf$/i.test(f.name))) { form.showError('Esse arquivo não é um PDF.'); return; }
+            if (f.size > MAX_PDF_MB * 1048576) { form.showError(`PDF grande demais (${fmtSize(f.size)}). O máximo é ${MAX_PDF_MB} MB.`); return; }
+            form.showError('');
+            pending = f; showArea(); form.sync();
+          });
+        }
+
+        form = bindForm({
+          validate: (v) => v.name.length > 0 && int(v.total) > 0,
+          onSave(v) {
+            const fields = { name: v.name, subject: v.subject, total: int(v.total), notes: v.notes };
+            const finish = (pdf) => commit(() => {
+              fields.pdf = pdf;
+              if (l) col.patch('exerciseLists', l.id, fields); // só conteúdo; o progresso da revisão não é tocado
+              else {
+                const now = Date.now();
+                col.put('exerciseLists', Object.assign({
+                  id, createdAt: now, n: 0, EF: 2.5, intervalDays: 0,
+                  lastReviewedAt: null, nextReviewAt: now, history: [],
+                }, fields));
+              }
+            });
+            if (pending) {
+              SC.files.put(id, pending)
+                .then(() => finish({ name: pending.name, size: pending.size }))
+                .catch(() => form.showError('Não consegui guardar o PDF neste aparelho (espaço cheio?). Salve sem o PDF ou libere espaço.'));
+            } else if (removed) {
+              SC.files.remove(id).then(() => finish(null));
+            } else finish(l && l.pdf ? l.pdf : null);
+          },
+        });
+        showArea();
+      },
+    };
+  };
+
+  // ---------- REVISÃO: VER O PDF DA LISTA ----------
+  let pdfUrl = null; // URL temporária do PDF aberto; trocada/liberada a cada abertura
+  SC.modals.listPdf = (m) => {
+    const l = col.find('exerciseLists', m.id);
+    if (!l || !l.pdf) return null;
+    return {
+      title: l.name,
+      wide: true,
+      body: `
+        <div data-pdf-box><p class="field-help">Carregando PDF…</p></div>
+        ${m.back ? `<div class="modal-form-actions"><button type="button" class="btn-secondary-block" data-action="modal" data-modal="listRedo" data-id="${l.id}">Voltar para a avaliação</button></div>` : ''}`,
+      wire() {
+        const box = document.querySelector('[data-pdf-box]');
+        SC.files.get(l.id).then((rec) => {
+          if (!document.body.contains(box)) return;
+          if (!rec) {
+            box.innerHTML = `<p class="field-help">O PDF “${esc(l.pdf.name)}” não está neste aparelho (PDFs não são sincronizados). Abra a lista no aparelho onde você o anexou, ou anexe de novo em Editar.</p>`;
+            return;
+          }
+          if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+          pdfUrl = URL.createObjectURL(new Blob([rec.data], { type: 'application/pdf' }));
+          // Celular: o visualizador embutido às vezes mostra só a 1ª página — por isso os links.
+          box.innerHTML = `
+            <iframe class="pdf-frame" src="${pdfUrl}" title="${esc(l.name)}"></iframe>
+            <div class="ocr-row">
+              <a class="btn-chip" href="${pdfUrl}" target="_blank" rel="noopener">${icon('eye', true)}Abrir em outra aba</a>
+              <a class="btn-chip" href="${pdfUrl}" download="${esc(rec.name || 'lista.pdf')}">Baixar</a>
+            </div>`;
+        });
+      },
+    };
+  };
+
+  // ---------- REVISÃO: REFAZER LISTA ("como foi?") ----------
+  SC.modals.listRedo = (m) => {
+    const l = col.find('exerciseLists', m.id);
+    if (!l) return null;
+    const last = (l.history || []).slice(-1)[0];
+    const grade = (result, cls, ico, label) =>
+      `<button type="button" class="quality-btn quality-btn-${cls}" data-action="grade" data-col="exerciseLists" data-id="${l.id}" data-result="${result}">${icon(ico)}${label}</button>`;
+    return {
+      title: 'Refazer lista',
+      body: `
+        <div class="review-question-preview">
+          <p><strong>${esc(l.name)}</strong></p>
+          <p class="field-help">${esc([l.subject, `${l.total} ${l.total === 1 ? 'exercício' : 'exercícios'}`, `revisão nº ${(l.history || []).length + 1}`].filter(Boolean).join(' · '))}</p>
+          ${l.notes ? `<p class="field-help">${esc(l.notes)}</p>` : ''}
+          ${last && SC.LIST_RESULT[last.result] ? `<p class="field-help">Da última vez: ${esc(SC.LIST_RESULT[last.result].toLowerCase())}.</p>` : ''}
+        </div>
+        ${l.pdf ? `<button type="button" class="btn-chip" data-action="modal" data-modal="listPdf" data-id="${l.id}" data-back="1" style="margin-bottom:1rem">${icon('eye', true)}Ver PDF da lista</button>` : ''}
+        <p class="field-help" style="margin-bottom:0.5rem">Como você foi dessa vez?</p>
+        <div class="quality-buttons">
+          ${grade('wrong', 'wrong', 'x', SC.LIST_RESULT.wrong)}${grade('hard', 'hard', 'alertCircle', SC.LIST_RESULT.hard)}${grade('easy', 'easy', 'check', SC.LIST_RESULT.easy)}
+        </div>
+        <div class="modal-form-actions" style="margin-top:1.5rem">
+          <button type="button" class="btn-secondary-block" data-action="close-modal">Cancelar</button>
+        </div>`,
     };
   };
 

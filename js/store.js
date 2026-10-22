@@ -20,7 +20,8 @@
     currentBlock: 'object',
     studyLogs: 'array',
     errorLogs: 'array',
-    topicReviews: 'array',
+    topicReviews: 'array', // sem tela desde o v15; fica aqui só para não apagar dados antigos
+    exerciseLists: 'array',
     mockExams: 'array',
     questionBank: 'array',
     isDark: 'boolean',
@@ -44,7 +45,8 @@
     studyLogs: [],     // { id, name, subject, category, status, ...campos da categoria }
     errorLogs: [],     // { id, subject, topic, description, errorType }
     mockExams: [],     // { id, name, date, minutes, rows: [{ subject, correct, total }] }
-    topicReviews: [],  // { level, passes, locked, (antigos: n, EF) } + { id, subject, topic, n, EF, intervalDays, lastReviewedAt, nextReviewAt, totalRounds, history[] }
+    topicReviews: [],  // LEGADO (v14): não tem mais tela; preservado nos dados
+    exerciseLists: [], // { id, name, subject, total, notes, pdf: { name, size } | null, createdAt, n, EF, intervalDays, lastReviewedAt, nextReviewAt, history[{ at, quality, intervalDays, result }] }
     questionBank: [],  // { id, subject, topic, statementText, imageData, answerKey, resolutionText, resolutionImageData, createdAt, n, EF, intervalDays, lastReviewedAt, nextReviewAt, retired, history[] }
     isDark: false,
 
@@ -58,10 +60,9 @@
     ui: {
       screen: 'dashboard',
       studyLogTab: 'active',   // 'active' | 'completed'
-      draw: [],                // ids do sorteio semanal
-      reviewTab: 'today',      // 'today' | 'topics' | 'questions'
+      reviewTab: 'today',      // 'today' | 'lists' | 'questions'
       questionSubTab: 'active', // 'active' | 'graduated'
-      filters: { log: {}, error: {}, topics: {}, questions: {} },
+      filters: { log: {}, error: {}, lists: {}, questions: {} },
     },
   };
 
@@ -85,14 +86,18 @@
   }
 
   // ---------- INDEXEDDB ----------
-  const DB_NAME = 'StudyCycleDB', STORE = 'app', KEY = 'appState';
+  const DB_NAME = 'StudyCycleDB', STORE = 'app', KEY = 'appState', FILES = 'files';
   let dbPromise = null;
 
   function db() {
     if (!dbPromise) {
       dbPromise = new Promise((resolve, reject) => {
-        const req = indexedDB.open(DB_NAME, 1);
-        req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+        const req = indexedDB.open(DB_NAME, 2); // v2: acrescenta o armário de arquivos (PDFs)
+        req.onupgradeneeded = () => {
+          const d = req.result;
+          if (!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE);
+          if (!d.objectStoreNames.contains(FILES)) d.createObjectStore(FILES);
+        };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
       });
@@ -122,6 +127,33 @@
     })).catch(() => null);
   }
 
+  // ---------- ARQUIVOS (PDFs das listas) ----------
+  // Ficam num armário separado do estado e NÃO são sincronizados: o estado
+  // inteiro vai como um único JSON para a nuvem, então um PDF ali dentro
+  // seria reenviado a cada sincronização. Só os metadados (nome, tamanho)
+  // moram no item da lista; o arquivo mora aqui, indexado pelo id da lista.
+  const files = {
+    put(id, file) {
+      return new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(fr.result);
+        fr.onerror = () => reject(fr.error);
+        fr.readAsArrayBuffer(file);
+      }).then((data) => db().then((d) => new Promise((resolve, reject) => {
+        const tx = d.transaction(FILES, 'readwrite');
+        tx.objectStore(FILES).put({ name: file.name, type: 'application/pdf', data }, id);
+        tx.oncomplete = resolve;
+        tx.onerror = tx.onabort = () => reject(tx.error);
+      })));
+    },
+    get: (id) => db().then((d) => new Promise((resolve) => {
+      const req = d.transaction(FILES, 'readonly').objectStore(FILES).get(id);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    })).catch(() => null),
+    remove: (id) => db().then((d) => { d.transaction(FILES, 'readwrite').objectStore(FILES).delete(id); }).catch(() => {}),
+  };
+
   // ---------- COLEÇÕES (matérias, logs, erros, tópicos, questões) ----------
   // Uma API só para as 5 listas, em vez de map/filter/concat espalhados.
   const col = {
@@ -147,5 +179,5 @@
   // Escapa texto para HTML — serve também para dentro de atributos.
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ESC[c]);
 
-  Object.assign(SC, { state, SYNCED, DEFAULT_SETTINGS, applyData, pickSyncable, saveState, loadState, col, uid, esc });
+  Object.assign(SC, { state, SYNCED, DEFAULT_SETTINGS, applyData, pickSyncable, saveState, loadState, col, files, uid, esc });
 })();

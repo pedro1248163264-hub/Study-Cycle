@@ -2,6 +2,26 @@
 
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
+## [v15] — Revisão: listas de exercícios em ciclo; fim da revisão de tópicos
+
+### Adicionado
+- **Listas de exercícios** na aba Revisão: nome, matéria (opcional) e **quantidade de exercícios**. A lista entra na fila de hoje; ao refazer, o app pergunta *como foi* (Foi mal / Mais ou menos / Foi bem = SM-2 nota 1/3/5) e agenda a próxima. **Nunca se aposenta** (diferente das questões, que graduam após 4 acertos seguidos).
+- Abas da Revisão agora: **Hoje** (listas + questões vencidas, misturadas por matéria), **Listas**, **Questões**.
+
+- **PDF da lista**: anexar no cadastro/edição (máx. 25 MB), "Ver PDF" no cartão e dentro da avaliação (visualizador embutido + abrir em outra aba + baixar). Guardado em armário separado do IndexedDB (`files`, DB v2) e **fora da sincronização**: o estado inteiro vai como um JSON só para a nuvem, então PDF ali dentro seria reenviado a cada sync. Só `pdf: { name, size }` viaja com a lista; em outro aparelho aparece o aviso "PDF não está neste aparelho". Excluir a lista apaga o PDF.
+
+### Removido
+- Revisão de **tópicos**: aba Tópicos, modal "Registrar teste", escada de domínio (níveis, teste frio, 3 aprovações), sorteio semanal, `applyTopicRound/topicStatus/drawLocked/efLabel`.
+- Os dados antigos (`topicReviews`) continuam em `SYNCED` só para não serem apagados ao salvar/sincronizar; não têm tela.
+
+### Alterado
+- Ação `grade` agora aceita `data-col` (`questionBank` por padrão, ou `exerciseLists`).
+
+### Arquivos
+`js/store.js` (`exerciseLists`, `SC.files`), `js/logic.js` (`applyListRedo`), `js/screens.js`, `js/modals.js` (`exerciseList`, `listRedo`, `listPdf`), `js/ui.js` (modal largo), `js/main.js`, `css/styles.css`.
+
+---
+
 ## [v14] — Escada de domínio, Simulados e causas de erro (preparação ITA)
 
 ### Alterado

@@ -261,10 +261,10 @@
   }
 
   // ---------- MODAL ----------
-  const modalShell = (title, body) => `
+  const modalShell = (title, body, wide) => `
     <div class="modal-overlay">
       <div class="modal-backdrop" data-action="close-modal"></div>
-      <div class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+      <div class="modal${wide ? ' modal-wide' : ''}" role="dialog" aria-modal="true" aria-label="${esc(title)}">
         <div class="modal-header">
           <h2>${esc(title)}</h2>
           <button type="button" class="modal-close" data-action="close-modal" aria-label="Fechar">${icon('x')}</button>
@@ -311,7 +311,7 @@
     const m = state.modal;
     const spec = m && SC.modals[m.name] ? SC.modals[m.name](m, d) : null;
     if (!spec) { state.modal = null; root.innerHTML = ''; return; }
-    root.innerHTML = modalShell(spec.title, spec.body);
+    root.innerHTML = modalShell(spec.title, spec.body, spec.wide);
     if (spec.wire) spec.wire();
   }
 
