@@ -61,6 +61,9 @@ const TEST_MIN_M = 0.6;    // a prova mira o topo do level
    fim, decide: sobe com ≥ CLIMB_PASS_FRAC de acertos E mediana ≤ TEST_PASS_MEDIAN_RATIO × meta
    do level novo. Se não passar, nada se perde (o pedido some e dá para pedir de novo).
    A barra cheia (+ m alto) só passa a RECOMENDAR o pedido — não há mais prova automática. */
+/* Subida AUTOMÁTICA: só quando o app está "100% seguro" — barra cheia, m no topo do level e
+   AUTO_UP_ITEMS contas recentes do level com ≥ AUTO_UP_ACC de acerto e ≥ AUTO_UP_FAST dentro da meta. */
+const AUTO_UP_M = 0.92, AUTO_UP_ITEMS = 20, AUTO_UP_ACC = 0.95, AUTO_UP_FAST = 0.6;
 const CLIMB_ITEMS = 12;
 const CLIMB_PASS_FRAC = 0.75;
 const CLIMB_M = 0.4;            // posição fixa dentro do level novo (parte mais fácil dele)

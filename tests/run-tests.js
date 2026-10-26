@@ -314,6 +314,24 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
   runBlock({kind:'climb', track:'divisao', level:n, count:CLIMB_ITEMS}, it=>({correct:true, ms:it.goalMs*0.5}));
   ok(dv.done, 'passar na subida do último level conclui a trilha');
 }
+// 3f3. subida automática: só com evidência forte
+{
+  freshStore(); placeAll(3, 0.95);
+  const tr = Engine.track('soma'); tr.xp = Engine.xpNeed(tr)-1;
+  for(let i=0;i<8 && tr.level===3;i++) runBlock({kind:'practice', track:'soma', level:3, count:BLOCK_MAX}, it=>({correct:true, ms:it.goalMs*0.5}));
+  ok(tr.level===4 && !tr.testReady && tr.stars[3]>=1, 'app sobe sozinho com m alto, 20 contas ≥95% e rápidas');
+  freshStore(); placeAll(3, 0.95);
+  const t2 = Engine.track('soma'); t2.xp = Engine.xpNeed(t2)-1; let i = 0;
+  for(let r=0;r<8;r++) runBlock({kind:'practice', track:'soma', level:3, count:BLOCK_MAX}, it=>({correct:true, ms:it.goalMs*1.4}));
+  ok(t2.level===3 && t2.testReady, 'correto porém sem rapidez: só recomenda, não sobe sozinho');
+  freshStore(); placeAll(3, 0.7);
+  const t3 = Engine.track('soma'); t3.testReady = true;
+  t3.window = Array.from({length:AUTO_UP_ITEMS}, ()=>({ms:500, correct:true, zone:'fast', lapse:false, level:3, kind:'practice'}));
+  Engine._maybeAutoLevelUp(t3, {events:[]});
+  ok(t3.level===3, 'm abaixo de '+AUTO_UP_M+': não sobe sozinho');
+  t3.m = 0.95; Engine._maybeAutoLevelUp(t3, {events:[]});
+  ok(t3.level===4, 'm no topo + janela perfeita: sobe');
+}
 // 3g. prova: aprovação sobe o level e dá estrelas; reprovação mantém o level
 {
   freshStore(); placeAll(3, 0.7);

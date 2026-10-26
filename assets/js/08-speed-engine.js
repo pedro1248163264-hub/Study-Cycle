@@ -380,6 +380,7 @@ const Engine = {
       tr.testReady = true;
       out.events.push({type:'testReady', key:tr.key, level:tr.level});
     }
+    if(!tr.done && tr.testReady && !tr.climb && !reinforce) this._maybeAutoLevelUp(tr, out);
     this.nudgeDigits(tr, item.digitKey, item.digits, good);
     out.hint = this.nudgePatternWeight(tr, item, correct, good);
     this.registerPairRt(tr, item, ms, correct, out.zone==='fast');
@@ -392,6 +393,22 @@ const Engine = {
         out.events.push({type:'reinforce', key:tr.key, level:tr.level-1});
       }
     }
+  },
+  // O app sobe sozinho só com evidência forte e recente no level atual (ver AUTO_UP_*).
+  _maybeAutoLevelUp(tr, out){
+    if(tr.m<AUTO_UP_M) return;
+    const rec = tr.window.filter(w=>w.kind==='practice' && w.level===tr.level && !w.lapse && !w.old).slice(-AUTO_UP_ITEMS);
+    if(rec.length<AUTO_UP_ITEMS) return;
+    const acc = rec.filter(w=>w.correct).length/rec.length, fast = rec.filter(w=>w.zone==='fast').length/rec.length;
+    if(acc<AUTO_UP_ACC || fast<AUTO_UP_FAST) return;
+    const from = tr.level, n = this.levelCount(tr.key), r = {};
+    tr.stars[from] = Math.max(tr.stars[from]||0, 1);
+    tr.testReady = false; tr.xp = 0;
+    if(from<n){ tr.level++; tr.m = M_AFTER_LEVELUP; r.newLevel = tr.level; }
+    else { tr.done = true; tr.rank = 0; r.finished = true; }
+    tr.strength = Math.max(tr.strength, 0.7);
+    tr.window.forEach(w=>{ w.old = true; });
+    out.events.push({type:'levelUp', key:tr.key, level:from, newLevel:r.newLevel||null, stars:1, finished:!!r.finished, auto:true});
   },
   _placementStep(b, item, good){
     b.visited.push(item.level);
