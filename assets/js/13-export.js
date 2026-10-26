@@ -127,6 +127,8 @@ const Export = {
       let tx = e.type;
       if(e.type==='placed') tx = 'nivelada no Nv '+e.level;
       else if(e.type==='test') tx = 'prova Nv '+e.level+': '+(e.pass?'APROVADA '+e.stars+'★':'reprovada')+' ('+e.correct+'/'+TEST_ITEMS+' acertos, '+e.hits+' dentro da meta, mediana '+(e.medianMs==null?'—':e.medianMs+' ms')+' vs meta '+Math.round(e.goalMs)+' ms)'+(e.retake?' [refazendo]':'');
+      else if(e.type==='climb') tx = 'subida pedida p/ Nv '+e.level+': '+(e.pass?'APROVADA '+e.stars+'★':'não aprovada')+' ('+e.correct+'/'+e.total+' acertos, '+e.hits+' dentro da meta, mediana '+(e.medianMs==null?'—':e.medianMs+' ms')+' vs meta '+e.goalMs+' ms)';
+      else if(e.type==='climbFailed') return;
       else if(e.type==='levelUp') tx = e.finished ? 'trilha concluída' : 'subiu do Nv '+e.level+' para o Nv '+e.newLevel;
       else if(e.type==='testFailed') tx = 'reprovou a prova do Nv '+e.level+' ('+e.correct+' acertos)';
       else if(e.type==='testReady') tx = 'prova do Nv '+e.level+' liberada';
@@ -148,7 +150,7 @@ const Export = {
 
     // ---- bruto ----
     L.push('## Registro bruto das últimas '+Math.min(maxRaw, rows.length)+' contas','');
-    L.push('Colunas: `quando` (UTC), `trilha`, `level`, `m` (posição no level), `ms` (tempo de raciocínio), `meta_ms`, `acerto` (1/0), `zona` (f/o/s/-), `tipo` (p treino, t prova, w aquecimento, r reforço, n nivelamento), `lapso` (1 = erro de digitação, ignorar).','');
+    L.push('Colunas: `quando` (UTC), `trilha`, `level`, `m` (posição no level), `ms` (tempo de raciocínio), `meta_ms`, `acerto` (1/0), `zona` (f/o/s/-), `tipo` (p treino, t prova, c subida de level pedida (contas do level seguinte), w aquecimento, r reforço, n nivelamento), `lapso` (1 = erro de digitação, ignorar).','');
     L.push('```csv','quando,trilha,level,m,ms,meta_ms,acerto,zona,tipo,lapso');
     rows.slice(-maxRaw).forEach(r=>{ L.push([new Date(r.t).toISOString().slice(0,16), r.key, r.level, r.m, r.ms, r.goal, r.ok?1:0, r.zone, r.kind, r.lapse?1:0].join(',')); });
     L.push('```','');

@@ -49,7 +49,7 @@ Os geradores ficam em `06-tracks.js` e garantem resposta exata, resposta inteira
 
 Uma **rodada** (Curta 16 / Normal 24 / Longa 40 contas — Ajustes) é uma sequência de **blocos**; cada bloco tem 6–8 contas de **uma trilha e um level**. A mistura entre trilhas acontece entre blocos (favorecendo trilhas mais fracas e há mais tempo sem treino; nunca a mesma trilha duas vezes seguidas).
 
-Ordem: **nivelamentos** (trilhas novas) → **treino** → **provas de nível** (clímax, no máximo 2 por rodada). No primeiro bloco de cada trilha na rodada há **aquecimento**: 3 contas um level abaixo (rende metade do XP; com "aquecimento relâmpago" ligado — só nas 4 operações básicas — a conta borra após 1,5 s, e o app avisa uma vez por rodada, antes das primeiras contas que somem). Em Ajustes você escolhe em quais das 4 operações a conta pode sumir.
+Ordem: **nivelamentos** (trilhas novas) → **treino**, com blocos de **subida de level** no meio quando a pessoa pediu (veja abaixo). No primeiro bloco de cada trilha na rodada há **aquecimento**: 3 contas um level abaixo (rende metade do XP; com "aquecimento relâmpago" ligado — só nas 4 operações básicas — a conta borra após 1,5 s, e o app avisa uma vez por rodada, antes das primeiras contas que somem). Em Ajustes você escolhe em quais das 4 operações a conta pode sumir.
 
 Não existem mais modos Ultimate/Intervalado/HIIT nem pausas automáticas por "frustração/fadiga": a rodada termina sozinha, e a pessoa pode pausar (também automático ao esconder o app) ou sair a qualquer momento (rodada parcial é salva).
 
@@ -57,12 +57,14 @@ Não existem mais modos Ultimate/Intervalado/HIIT nem pausas automáticas por "f
 
 Na primeira vez numa trilha, 6 contas em escada (acerto bom sobe 1 level, o resto desce 1), começando em ~40% da trilha. O resultado é a média dos últimos 4 levels, sem passar do melhor level acertado — começa um pouco abaixo da habilidade, para as primeiras contas serem vitórias. Levels abaixo recebem 1★.
 
-## XP, barra e prova de nível
+## XP, barra e subida de level
 
 - **XP por acerto:** `fast` 10, `ok` 6, `slow` 3, × (0,8 + 0,4·m). Erro = 0 (nunca negativo). **Combo:** +1 XP a cada 5 acertos seguidos (até +4); erro zera o combo.
 - O mesmo XP enche a **barra do level da trilha** (120 + 40·(L−1) XP) e soma no **XP geral**.
-- Barra cheia **e** `m ≥ 0,55` → **prova de nível** liberada (8 contas no topo do level). Aprova com ≥ 7 acertos **e** mediana ≤ 1,7× a meta. **★** = aprovou; **★★** = ≥ 5 dentro da meta; **★★★** = 8/8 e ≥ 7 dentro da meta. Bônus de XP: 40/70/100.
-- Aprovou → level seguinte (`m` recomeça em 0,15). Reprovou → **nada cai**: a barra volta a 55% e a prova reaparece quando liberar de novo. Na aba Trilhas, toque num level já conquistado com menos de 3★ na escada para **refazer a prova** e melhorar as estrelas (não muda o level atual).
+- Barra cheia **e** `m ≥ 0,55` → a trilha ganha o selo **Recomendado** (a barra continua com o efeito visual de 100%). O app **não impõe** mais nenhuma prova: quem decide quando subir é a pessoa.
+- **Subir de level a qualquer momento:** na aba Trilhas (ou no aviso "Recomendado" da Início) toque em **Subir de level**. A partir daí, só **aquela trilha** passa a receber contas do **level seguinte** (em rodada geral, até 8 por rodada; em "Treinar só esta", todas de uma vez), e as outras trilhas seguem normais. Ao completar **12 contas** (`CLIMB_ITEMS`), o app decide: sobe com **≥ 75% de acertos** (9/12) **e** mediana ≤ 1,7× a meta do level novo. **★** = passou; **★★** = ≥ 5 dentro da meta; **★★★** = ≥ 11 acertos e ≥ 8 dentro da meta. Bônus de XP 40/70/100. Lapsos de digitação não contam. A pessoa pode cancelar a subida a qualquer hora.
+- Passou → level seguinte (`m` recomeça em 0,15, barra zerada). Não passou → **nada se perde** (nem barra, nem estrelas, nem level): o pedido some e dá para pedir de novo. No último level, "subir" conclui a trilha (patente Mestre).
+- Na aba Trilhas, toque num level já conquistado com menos de 3★ na escada para **refazer a prova** (8 contas) e melhorar as estrelas (não muda o level atual).
 - Terminou o último level → trilha **concluída** e entra em **Mestre**: até 5 patentes (400 XP cada), e a meta de tempo encolhe 7% por patente — o treino de velocidade nunca acaba.
 
 ## Recompensas e retenção
@@ -74,7 +76,7 @@ Na primeira vez numa trilha, 6 contas em escada (acerto bom sobe 1 level, o rest
 
 ## Telas
 
-Início (nível, meta, sequência, semana, botão **Treinar** ou **Começar nivelamento**, avisos de prova liberada) · Trilhas (liga/desliga, level, barra, estrelas, escada de levels, dica, "treinar só esta", prova) · Treino (barra da rodada, chip da trilha/level, combo e XP, teclado) · Resumo da rodada · Estatísticas (precisão, % dentro da meta, contas por dia, por trilha) · Ajustes (meta, tamanho da rodada, desafio, tema, idioma PT/EN, voz/TTS, vibração, sons, modo foco, exportação CSV/JSON, apagar dados).
+Início (nível, meta, sequência, semana, botão **Treinar** ou **Começar nivelamento**, avisos "Recomendado: subir de level") · Trilhas (liga/desliga, level, barra, estrelas, escada de levels, dica, "treinar só esta", subir de level) · Treino (barra da rodada, chip da trilha/level, combo e XP, teclado) · Resumo da rodada · Estatísticas (precisão, % dentro da meta, contas por dia, por trilha) · Ajustes (meta, tamanho da rodada, desafio, tema, idioma PT/EN, voz/TTS, vibração, sons, modo foco, exportação CSV/JSON, apagar dados).
 
 ## Relatório para IA
 

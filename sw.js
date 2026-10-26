@@ -1,7 +1,7 @@
 // Mude esta versão sempre que um arquivo listado em ASSETS for alterado.
 // Sem isso, um PWA já instalado pode continuar executando uma cópia antiga
 // dos módulos em assets/js/ no celular, mesmo depois de uma nova publicação.
-const CACHE = 'mental-math-v2-7';
+const CACHE = 'mental-math-v2-8';
 const ASSETS = [
   './',
   './index.html',

@@ -82,6 +82,11 @@ const Store = {
       tr.reinforce = t.reinforce ? 1 : 0;
       tr.stars = {};
       if(t.stars && typeof t.stars==='object') Object.keys(t.stars).forEach(l=>{ const v=+t.stars[l]; if(+l>=1 && +l<=n && v>=1) tr.stars[l] = Math.min(3, Math.round(v)); });
+      if(t.climb && typeof t.climb==='object'){
+        const cl = t.climb, need = U.clamp(Math.round(+cl.need)||CLIMB_ITEMS, 4, 40);
+        const res = Array.isArray(cl.results) ? cl.results.filter(x=>x && Number.isFinite(+x.ms)).slice(0,need).map(x=>({c:x.c?1:0, ms:Math.round(+x.ms), f:x.f?1:0})) : [];
+        if(!tr.done && Math.round(+cl.level)>=1 && Math.round(+cl.level)<=n && res.length<need) tr.climb = {level:Math.round(+cl.level), need, results:res, askedAt:Number.isFinite(+cl.askedAt)?+cl.askedAt:Date.now()};
+      }
       tr.strength = U.clamp(Number.isFinite(+t.strength) ? +t.strength : 0.6, 0, 1);
       tr.window = Array.isArray(t.window) ? t.window.filter(w=>w && Number.isFinite(w.ms)).slice(-WINDOW_SIZE) : [];
       tr.items = Math.max(0, Math.round(+t.items)||0);

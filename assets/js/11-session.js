@@ -76,7 +76,7 @@ const Session = {
     // Aviso do aquecimento relâmpago: uma vez por rodada, antes das primeiras contas que somem.
     const flashNotice = spec.kind==='practice' && spec.warmup>0 && !spec.reinforce && Engine.flashApplies(spec.track) && !this.flashWarned;
     if(flashNotice) this.flashWarned = true;
-    const needsIntro = spec.kind==='test' || spec.reinforce || firstVisit || flashNotice || (spec.kind==='placement' && i===0);
+    const needsIntro = spec.kind==='test' || spec.kind==='climb' || spec.reinforce || firstVisit || flashNotice || (spec.kind==='placement' && i===0);
     if(firstVisit){ seen[this.tipSeenKey(spec)] = true; Store.save(); }
     if(needsIntro){
       this.waiting = true;
@@ -242,7 +242,7 @@ const Session = {
   },
   // Registro compacto por conta (relatório de IA): [t, trilha#, level, m, ms, meta, acerto, zona, tipo, lapso]
   _logItem(item, ms, correct, res){
-    const d = Store.data, kd = item.isWarmup ? 'w' : item.isReinforce ? 'r' : ({practice:'p', test:'t', placement:'n'})[item.kind] || 'p';
+    const d = Store.data, kd = item.isWarmup ? 'w' : item.isReinforce ? 'r' : ({practice:'p', test:'t', placement:'n', climb:'c'})[item.kind] || 'p';
     d.log.push([Date.now(), TRACK_ORDER.indexOf(item.key), item.level, Math.round(item.m*100)/100, Math.round(ms), item.goalMs, correct?1:0,
       res.zone ? res.zone[0] : '-', kd, res.lapse?1:0]);
     if(d.log.length>LOG_MAX) d.log.splice(0, d.log.length-LOG_MAX);
@@ -279,6 +279,26 @@ const Session = {
       this.waiting = true;
       if(r.pass){ Sound.levelUp(); Haptics.celebrate(); }
       UI.showTestResult(Object.assign({}, res, {bonus}), ()=>{
+        this.waiting = false;
+        if(this.active) this.advanceBlock();
+      });
+      return;
+    }
+    if(res.kind==='climb'){
+      const r = res.test, cl = Engine.track(res.key).climb;
+      if(!r){   // ainda faltam contas: segue a rodada e a decisão sai quando completar
+        const n = cl ? cl.need : CLIMB_ITEMS, k = cl ? cl.results.length : n;
+        UI.toast(tf('climb_progress',{track:trackLabel(res.key), k, n}));
+        this.advanceBlock(); return;
+      }
+      let bonus = 0;
+      if(r.pass){ bonus = TEST_PASS_XP[r.stars] || 0; this._award(bonus); }
+      this.stats.tests.push({key:res.key, level:res.level, pass:r.pass, stars:r.stars, bonus});
+      this._logEvent({type:'climb', key:res.key, level:res.level, pass:r.pass, stars:r.stars, correct:r.correct, total:r.total, hits:r.hits, medianMs:r.medianMs==null?null:Math.round(r.medianMs), goalMs:Math.round(r.goalMs)});
+      UI.updateHud(this);
+      this.waiting = true;
+      if(r.pass){ Sound.levelUp(); Haptics.celebrate(); }
+      UI.showTestResult(Object.assign({}, res, {bonus, climb:true}), ()=>{
         this.waiting = false;
         if(this.active) this.advanceBlock();
       });

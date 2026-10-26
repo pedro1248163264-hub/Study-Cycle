@@ -106,13 +106,13 @@ const UI = {
     $('placementCard').classList.toggle('hidden', placed);
     $('btnStart').textContent = placed ? t('start_round') : t('start_placement');
     const box = $('testBanners'); box.innerHTML = '';
-    Engine.activeKeys().filter(k=>Engine.track(k).placed && Engine.track(k).testReady).forEach(k=>{
+    Engine.activeKeys().filter(k=>Engine.track(k).placed && !Engine.track(k).done && (Engine.track(k).testReady || Engine.track(k).climb)).forEach(k=>{
       const def = TRACKS[k];
       const b = document.createElement('button');
       b.className = 'test-banner';
       b.style.setProperty('--c', def.color);
-      b.innerHTML = `<span class="sym">${esc(def.sym)}</span><span class="tx"><b>${esc(tf('test_ready_banner',{track:trackLabel(k)}))}</b><small>${esc(t('start_test'))}</small></span><span class="go">›</span>`;
-      b.onclick = ()=>Session.start({onlyTrack:k, size:1});
+      b.innerHTML = `<span class="sym">${esc(def.sym)}</span><span class="tx"><b>${esc(tf('test_ready_banner',{track:trackLabel(k)}))}</b><small>${esc(Engine.track(k).climb ? t('climb_continue') : t('climb_ask'))}</small></span><span class="go">›</span>`;
+      b.onclick = ()=>{ Engine.startClimb(k); Session.start({onlyTrack:k}); };
       box.appendChild(b);
     });
     $('homeTotal').textContent = s.player.items;
@@ -133,7 +133,8 @@ const UI = {
       if(!v.placed) status = t('track_placing');
       else if(v.done) status = v.rank>0 ? tf('track_master',{n:v.rank}) : t('track_done');
       else status = tf('track_level_short',{n:v.level})+'/'+v.n;
-      const badge = v.testReady && v.placed && !v.done ? `<span class="badge">${esc(t('test_waiting'))}</span>` : '';
+      const cl = v.tr.climb;
+      const badge = !v.placed || v.done ? '' : cl ? `<span class="badge">⬆ ${cl.results.length}/${cl.need}</span>` : v.testReady ? `<span class="badge">${esc(t('test_waiting'))}</span>` : '';
       card.innerHTML = `<div class="tc-head"><div class="tc-sym">${esc(def.sym)}</div>
         <div class="tc-main"><div class="tc-name">${esc(trackLabel(key))}${badge}</div>
         <div class="tc-sub">${esc(status)}${v.placed?' · ★ '+v.stars+'/'+v.starsMax:''}</div></div>
@@ -186,12 +187,25 @@ const UI = {
     const only = document.createElement('button'); only.className = 'btn btn-ghost small'; only.textContent = t('train_only');
     only.onclick = ()=>Session.start({onlyTrack:key});
     row.appendChild(only);
-    if(v.placed && v.testReady && !v.done){
-      const test = document.createElement('button'); test.className = 'btn btn-primary small'; test.textContent = t('start_test');
-      test.onclick = ()=>Session.start({onlyTrack:key, size:1});
-      row.appendChild(test);
+    if(v.placed && !v.done){
+      const cl = tr.climb;
+      const up = document.createElement('button');
+      up.className = 'btn small '+(v.testReady||cl ? 'btn-primary' : 'btn-ghost');
+      up.textContent = cl ? tf('climb_continue_n',{k:cl.results.length, n:cl.need}) : '⬆ '+t('climb_ask')+(v.testReady ? ' · '+t('test_waiting') : '');
+      up.onclick = ()=>{ if(!cl) Engine.startClimb(key); Session.start({onlyTrack:key}); };
+      row.appendChild(up);
     }
     box.appendChild(row);
+    if(v.placed && !v.done){
+      const note = document.createElement('div'); note.className = 'tc-tip'; note.style.marginTop = '10px';
+      if(tr.climb){
+        note.innerHTML = esc(tf('climb_info_on',{l:tr.climb.level, k:tr.climb.results.length, n:tr.climb.need}));
+        const cx = document.createElement('button'); cx.className = 'btn btn-ghost small'; cx.style.marginTop = '8px'; cx.textContent = t('climb_cancel');
+        cx.onclick = ()=>{ Engine.cancelClimb(key); this.renderTracks(); this.renderHome(); };
+        note.appendChild(document.createElement('br')); note.appendChild(cx);
+      } else note.textContent = tf('climb_info_off',{n:CLIMB_ITEMS, k:Engine.climbPassNeed(CLIMB_ITEMS)});
+      box.appendChild(note);
+    }
     if(this.retake && this.retake.key===key){
       const rt = document.createElement('button'); rt.className = 'btn btn-ghost small'; rt.style.marginTop = '10px';
       rt.textContent = t('retake_test')+' · '+tf('track_level_short',{n:this.retake.level});
@@ -225,6 +239,7 @@ const UI = {
   },
   kindLabel(kind, o){
     if(kind==='test') return t('block_test');
+    if(kind==='climb') return t('block_climb');
     if(kind==='placement') return t('block_placement');
     if(o && o.reinforce) return t('block_reinforce');
     return t('block_practice');
@@ -264,10 +279,11 @@ const UI = {
     const ov = $('overlayIntro');
     ov.style.setProperty('--c', def.color);
     $('ovSym').textContent = def.sym;
-    $('ovKind').textContent = spec.kind==='test' ? t('block_test') : spec.kind==='placement' ? t('block_placement') : spec.reinforce ? t('block_reinforce') : trackLabel(spec.track);
+    $('ovKind').textContent = spec.kind==='test' ? t('block_test') : spec.kind==='climb' ? t('block_climb') : spec.kind==='placement' ? t('block_placement') : spec.reinforce ? t('block_reinforce') : trackLabel(spec.track);
     $('ovTitle').textContent = spec.kind==='placement' ? t('placement_card_title') : trackLabel(spec.track)+' · '+tf('track_level_short',{n:spec.level});
-    let sub = '';
+    let sub = ''; const tr0 = Engine.track(spec.track);
     if(spec.kind==='test') sub = tf('test_intro',{n:TEST_ITEMS, k:TEST_PASS_CORRECT});
+    else if(spec.kind==='climb'){ const cl = tr0.climb; sub = tf('climb_intro',{n:cl?cl.need:CLIMB_ITEMS, k:Engine.climbPassNeed(cl?cl.need:CLIMB_ITEMS), left:spec.count}); }
     else if(spec.kind==='placement') sub = tf('placement_intro',{n:PLACEMENT_ITEMS});
     else if(spec.reinforce) sub = t('reinforce_intro');
     else sub = levelName(spec.track, spec.level);
@@ -276,7 +292,7 @@ const UI = {
     $('ovGoal').textContent = spec.kind==='placement' ? '' :
       t('goal_label')+' '+this.fmtGoal(levelGoalMs(spec.track, spec.level, tr.done?tr.rank:0));
     const tip = $('ovTip');
-    if(spec.kind!=='placement' && (info.firstVisit || spec.kind==='test')){
+    if(spec.kind!=='placement' && (info.firstVisit || spec.kind==='test' || spec.kind==='climb')){
       tip.innerHTML = `<b>${esc(t('tip_title'))}</b><br>${esc(levelTip(spec.track, spec.level))}`;
       tip.classList.remove('hidden');
     } else tip.classList.add('hidden');
@@ -299,10 +315,11 @@ const UI = {
     $('resStars').innerHTML = r.pass ? [1,2,3].map(i=>`<span class="${i<=r.stars?'on':''}" style="animation-delay:${0.25+i*0.22}s">★</span>`).join('') : '';
     $('resLine').textContent = tf('test_result_line', {c:r.correct, total:res.total, h:r.hits, med:r.medianMs==null?'—':U.fmtSec(r.medianMs)});
     let note = '';
-    if(r.pass && r.leveledUp) note = tf('ev_level_up',{track:trackLabel(res.key), n:res.level})+' → '+tf('track_level_short',{n:r.newLevel})+' · '+levelName(res.key, r.newLevel);
+    if(res.climb && r.pass && r.leveledUp) note = tf('ev_level_up',{track:trackLabel(res.key), n:res.level})+' → '+tf('track_level_short',{n:r.newLevel})+' · '+levelName(res.key, r.newLevel);
+    else if(r.pass && r.leveledUp) note = tf('ev_level_up',{track:trackLabel(res.key), n:res.level})+' → '+tf('track_level_short',{n:r.newLevel})+' · '+levelName(res.key, r.newLevel);
     else if(r.pass && r.finished) note = tf('ev_level_finish',{track:trackLabel(res.key)});
     else if(r.pass) note = tf('ev_stars_up',{track:trackLabel(res.key), n:res.level, s:r.stars});
-    else note = tf('ev_test_failed',{track:trackLabel(res.key), c:r.correct, total:res.total});
+    else note = res.climb ? tf('ev_climb_failed',{track:trackLabel(res.key), c:r.correct, total:res.total, n:res.level}) : tf('ev_test_failed',{track:trackLabel(res.key), c:r.correct, total:res.total});
     $('resNote').textContent = note;
     $('resXp').textContent = res.bonus ? '+'+res.bonus+' XP' : '';
     $('resGo').textContent = t('continue_btn');
@@ -556,6 +573,7 @@ const UI = {
       case 'testReady': return {ic:'🎯', cls:'big', tx:tf('ev_test_ready',{track:tl})};
       case 'goal': return {ic:'🔥', cls:'big', tx:tf('ev_goal',{n:e.xp})};
       case 'testFailed': return {ic:'💪', cls:'', tx:tf('ev_test_failed',{track:tl, c:e.correct, total:TEST_ITEMS})};
+      case 'climbFailed': return {ic:'💪', cls:'', tx:tf('ev_climb_failed',{track:tl, c:e.correct, total:e.total, n:e.level-0})};
       case 'reinforce': return {ic:'🧱', cls:'', tx:tf('ev_reinforce',{track:tl, n:e.level})};
     }
     return null;
@@ -605,7 +623,7 @@ const UI = {
     });
     $('sumTracksCard').classList.toggle('hidden', !touched.length);
     // conquistas
-    const order = ['playerLevel','levelUp','rankUp','testReady','goal','starsUp','record','placed','testFailed','reinforce'];
+    const order = ['playerLevel','levelUp','rankUp','testReady','goal','starsUp','record','placed','testFailed','climbFailed','reinforce'];
     const evs = (sum.events||[]).filter(e=>order.includes(e.type)).sort((a,b)=>order.indexOf(a.type)-order.indexOf(b.type));
     const list = $('sumRewards'); list.innerHTML = '';
     const lines = evs.map(e=>this.eventLine(e)).filter(Boolean);

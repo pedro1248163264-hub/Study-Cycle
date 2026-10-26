@@ -55,6 +55,18 @@ const TEST_FAIL_XP_KEEP = 0.55;
 const TEST_READY_M = 0.55; // barra cheia só libera a prova quando m já está na metade de cima do level
 const TEST_MIN_M = 0.6;    // a prova mira o topo do level
 
+/* ---------- 3b. SUBIDA DE LEVEL PEDIDA PELA PESSOA ----------
+   A qualquer momento a pessoa pede para subir de level numa trilha. O app passa a misturar,
+   nas rodadas, CLIMB_ITEMS contas do level seguinte DAQUELA trilha (blocos "subida") e, ao
+   fim, decide: sobe com ≥ CLIMB_PASS_FRAC de acertos E mediana ≤ TEST_PASS_MEDIAN_RATIO × meta
+   do level novo. Se não passar, nada se perde (o pedido some e dá para pedir de novo).
+   A barra cheia (+ m alto) só passa a RECOMENDAR o pedido — não há mais prova automática. */
+const CLIMB_ITEMS = 12;
+const CLIMB_PASS_FRAC = 0.75;
+const CLIMB_M = 0.4;            // posição fixa dentro do level novo (parte mais fácil dele)
+const CLIMB_BLOCK_MAX = 8;      // por rodada geral, no máx. 8 contas de subida seguidas (o resto vem na próxima)
+const CLIMB_MAX_PER_ROUND = 2;  // trilhas com subida em andamento tratadas por rodada
+
 /* ---------- 4. NIVELAMENTO (primeira vez numa trilha) ----------
    Escada simples: acerto "bom" sobe um level, o resto desce um. O resultado é a média dos
    levels das últimas PLACEMENT_TAIL contas (arredondada para baixo, sem passar do melhor
