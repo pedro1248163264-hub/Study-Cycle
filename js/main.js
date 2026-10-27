@@ -31,8 +31,12 @@
 
     remove(el) {
       if (el.dataset.confirm && !confirm(el.dataset.confirm)) return;
+      const item = el.dataset.col === 'exerciseLists' ? col.find('exerciseLists', el.dataset.id) : null;
       col.remove(el.dataset.col, el.dataset.id);
-      if (el.dataset.col === 'exerciseLists') SC.files.remove(el.dataset.id); // PDF guardado à parte
+      if (item) { // PDF guardado à parte: aparelho + nuvem
+        SC.files.remove(el.dataset.id);
+        if (item.pdf && item.pdf.path) SC.cloud.remove(item.pdf.path);
+      }
       persist();
     },
     patch(el) {

@@ -88,7 +88,10 @@
           renderSyncStatus();
         });
       }
-    }).catch((err) => {
+    }).then(() => uploadPending().then((n) => {
+      // Gravou list.pdf.path: é alteração local nova, então sincroniza de novo (1 vez).
+      if (n) { saveState(); performSync(code); }
+    })).catch((err) => {
       state.sync.status = 'error';
       if (err && err.isInvalidCode) {
         clearCode(); // senha errada: esquece e pede de novo
@@ -99,6 +102,82 @@
       state.sync.error = (err && err.message) || 'Erro de conexão';
       renderSyncStatus();
     });
+  }
+
+  // ---------- PDFs DAS LISTAS (Supabase Storage) ----------
+  // Bucket privado. Antes de cada envio/download/exclusão o app pede uma
+  // liberação de 10 min para AQUELE arquivo (função pdf_grant, que confere
+  // a senha de sincronização). Setup: supabase/pdf-storage.sql.
+  const BUCKET = 'list-pdfs';
+  const storageUrl = (path, authed) => SUPABASE_URL + '/storage/v1/object/' + (authed ? 'authenticated/' : '') + BUCKET + '/' + path;
+  const storageHeaders = () => ({ apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + SUPABASE_ANON_KEY });
+
+  function grant(path, op) {
+    const code = getCode();
+    if (!code) {
+      const e = new Error('Sem senha de sincronização neste aparelho. Toque em sincronizar (⟳) e digite a senha.');
+      e.noCode = true;
+      return Promise.reject(e);
+    }
+    return callRpc('pdf_grant', { p_code: code, p_path: path, p_op: op }).catch((err) => {
+      if (err.isInvalidCode) { clearCode(); err.message = 'Senha incorreta. Toque em sincronizar (⟳) e digite de novo.'; }
+      else if (/pdf_grant/i.test(err.message)) err.message = 'A nuvem de PDFs ainda não foi configurada (rode supabase/pdf-storage.sql no Supabase).';
+      throw err;
+    });
+  }
+
+  function storageFail(res) {
+    return res.text().then((t) => {
+      let msg = null;
+      try { const j = JSON.parse(t); msg = j.message || j.error; } catch (e) { /* corpo não é JSON */ }
+      throw new Error(msg || ('HTTP ' + res.status));
+    });
+  }
+
+  // Envia o PDF e devolve o caminho no bucket (guardado em list.pdf.path).
+  function uploadPdf(file) {
+    const path = SC.uid() + SC.uid() + SC.uid() + '.pdf'; // aleatório, nunca reaproveitado
+    return grant(path, 'write').then(() => {
+      const fd = new FormData();
+      fd.append('cacheControl', '3600');
+      fd.append('', file, file.name || 'lista.pdf');
+      return fetch(storageUrl(path, false), { method: 'POST', headers: storageHeaders(), body: fd });
+    }).then((res) => (res.ok ? path : storageFail(res)));
+  }
+
+  function downloadPdf(path) {
+    return grant(path, 'read')
+      .then(() => fetch(storageUrl(path, true), { headers: storageHeaders(), cache: 'no-store' }))
+      .then((res) => (res.ok ? res.blob() : storageFail(res)));
+  }
+
+  // Melhor esforço: se falhar (offline), só sobra um arquivo órfão na nuvem.
+  function removePdf(path) {
+    if (!path) return Promise.resolve(false);
+    return grant(path, 'delete')
+      .then(() => fetch(storageUrl(path, false), { method: 'DELETE', headers: storageHeaders() }))
+      .then((res) => res.ok)
+      .catch(() => false);
+  }
+
+  // Limpeza de PDFs guardados neste aparelho por versões anteriores (v15/v16):
+  // se ainda não estão na nuvem, sobe; depois APAGA a cópia local. Devolve quantas subiram.
+  function uploadPending() {
+    const todo = state.exerciseLists.filter((l) => l.pdf);
+    let done = 0;
+    return todo.reduce((chain, l) => chain.then((ok) => {
+      if (!ok) return false;
+      return SC.files.get(l.id).then((rec) => {
+        if (!rec) return true;                                   // nada guardado aqui
+        if (l.pdf.path) return SC.files.remove(l.id).then(() => true); // já está na nuvem: descarta a cópia
+        const file = new File([rec.data], rec.name || l.pdf.name || 'lista.pdf', { type: 'application/pdf' });
+        return uploadPdf(file).then((path) => {
+          SC.col.patch('exerciseLists', l.id, { pdf: Object.assign({}, l.pdf, { path }) });
+          done++;
+          return SC.files.remove(l.id).then(() => true);
+        });
+      }).catch(() => false); // sem internet/senha: tenta no próximo sync
+    }), Promise.resolve(true)).then(() => done);
   }
 
   // Atualiza só o botão + linha de status do cabeçalho (barato após cada edição).
@@ -130,5 +209,9 @@
     }
   }
 
-  Object.assign(SC, { syncNow, performSync, renderSyncStatus, sync: { codeExists, claimCode, setCode } });
+  Object.assign(SC, {
+    syncNow, performSync, renderSyncStatus,
+    sync: { codeExists, claimCode, setCode, hasCode: () => !!getCode() },
+    cloud: { upload: uploadPdf, download: downloadPdf, remove: removePdf, uploadPending },
+  });
 })();

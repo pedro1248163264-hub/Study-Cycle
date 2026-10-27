@@ -261,7 +261,7 @@
         <div class="field">
           <label>PDF da lista (opcional)</label>
           <div data-pdf-area></div>
-          <p class="field-help">Fica guardado só neste aparelho (não vai para a nuvem). Máx. ${MAX_PDF_MB} MB.</p>
+          <p class="field-help">Vai direto para a nuvem (precisa de internet e da senha de sincronização) e não fica salvo no aparelho: abre em qualquer um, baixando só na hora de ver. Máx. ${MAX_PDF_MB} MB.</p>
         </div>
         ${inputField({ name: 'notes', label: 'Observações (opcional)', value: l ? l.notes || '' : '', rows: 3, placeholder: 'Onde está a lista, página, link…' })}
         ${l ? '' : '<p class="field-help">A lista entra na fila de hoje. Depois de refazê-la, o app pergunta como foi e agenda a próxima vez.</p>'}
@@ -295,6 +295,8 @@
           validate: (v) => v.name.length > 0 && int(v.total) > 0,
           onSave(v) {
             const fields = { name: v.name, subject: v.subject, total: int(v.total), notes: v.notes };
+            const oldPath = l && l.pdf && l.pdf.path;
+            const saveBtn = form.root.querySelector('[data-save]');
             const finish = (pdf) => commit(() => {
               fields.pdf = pdf;
               if (l) col.patch('exerciseLists', l.id, fields); // só conteúdo; o progresso da revisão não é tocado
@@ -307,11 +309,21 @@
               }
             });
             if (pending) {
-              SC.files.put(id, pending)
-                .then(() => finish({ name: pending.name, size: pending.size }))
-                .catch(() => form.showError('Não consegui guardar o PDF neste aparelho (espaço cheio?). Salve sem o PDF ou libere espaço.'));
+              saveBtn.disabled = true;
+              saveBtn.textContent = 'Enviando PDF…';
+              SC.cloud.upload(pending)
+                .then((path) => {
+                  if (oldPath) SC.cloud.remove(oldPath);
+                  finish({ name: pending.name, size: pending.size, path });
+                })
+                .catch((err) => {
+                  saveBtn.disabled = false;
+                  saveBtn.textContent = l ? 'Salvar alterações' : 'Adicionar lista';
+                  form.showError('Não consegui enviar o PDF: ' + ((err && err.message) || 'erro de conexão') + ' Nada foi salvo.');
+                });
             } else if (removed) {
-              SC.files.remove(id).then(() => finish(null));
+              if (oldPath) SC.cloud.remove(oldPath);
+              SC.files.remove(id).then(() => finish(null)); // limpa resquício local antigo
             } else finish(l && l.pdf ? l.pdf : null);
           },
         });
@@ -321,7 +333,10 @@
   };
 
   // ---------- REVISÃO: VER O PDF DA LISTA ----------
-  let pdfUrl = null; // URL temporária do PDF aberto; trocada/liberada a cada abertura
+  // O PDF é baixado da nuvem só para a tela (memória) e descartado ao fechar:
+  // nada fica salvo no aparelho (a menos que você toque em "Baixar").
+  let pdfUrl = null;
+  const dropPdf = () => { if (pdfUrl) { URL.revokeObjectURL(pdfUrl); pdfUrl = null; } };
   SC.modals.listPdf = (m) => {
     const l = col.find('exerciseLists', m.id);
     if (!l || !l.pdf) return null;
@@ -333,22 +348,45 @@
         ${m.back ? `<div class="modal-form-actions"><button type="button" class="btn-secondary-block" data-action="modal" data-modal="listRedo" data-id="${l.id}">Voltar para a avaliação</button></div>` : ''}`,
       wire() {
         const box = document.querySelector('[data-pdf-box]');
-        SC.files.get(l.id).then((rec) => {
-          if (!document.body.contains(box)) return;
-          if (!rec) {
-            box.innerHTML = `<p class="field-help">O PDF “${esc(l.pdf.name)}” não está neste aparelho (PDFs não são sincronizados). Abra a lista no aparelho onde você o anexou, ou anexe de novo em Editar.</p>`;
-            return;
-          }
-          if (pdfUrl) URL.revokeObjectURL(pdfUrl);
-          pdfUrl = URL.createObjectURL(new Blob([rec.data], { type: 'application/pdf' }));
+        const alive = () => document.body.contains(box);
+        dropPdf();
+        // Quando o modal fecha (ou troca), joga fora o PDF da memória.
+        const watch = setInterval(() => { if (!alive()) { clearInterval(watch); setTimeout(dropPdf, 30000); } }, 1000);
+
+        function show(blob) {
+          if (!alive()) return;
+          dropPdf();
+          pdfUrl = URL.createObjectURL(blob);
           // Celular: o visualizador embutido às vezes mostra só a 1ª página — por isso os links.
           box.innerHTML = `
             <iframe class="pdf-frame" src="${pdfUrl}" title="${esc(l.name)}"></iframe>
             <div class="ocr-row">
               <a class="btn-chip" href="${pdfUrl}" target="_blank" rel="noopener">${icon('eye', true)}Abrir em outra aba</a>
-              <a class="btn-chip" href="${pdfUrl}" download="${esc(rec.name || 'lista.pdf')}">Baixar</a>
+              <a class="btn-chip" href="${pdfUrl}" download="${esc(l.pdf.name || 'lista.pdf')}">Baixar</a>
             </div>`;
-        });
+        }
+
+        function fail(msg, retry) {
+          if (!alive()) return;
+          box.innerHTML = `<p class="field-help">${esc(msg)}</p>${retry ? `<button type="button" class="btn-chip" data-role="retry">${icon('refreshCw', true)}Tentar de novo</button>` : ''}`;
+          const b = box.querySelector('[data-role="retry"]');
+          if (b) b.addEventListener('click', load);
+        }
+
+        function load() {
+          box.innerHTML = '<p class="field-help">Baixando da nuvem…</p>';
+          if (l.pdf.path) {
+            SC.cloud.download(l.pdf.path).then(show)
+              .catch((err) => fail('Não consegui abrir o PDF: ' + ((err && err.message) || 'erro de conexão'), true));
+            return;
+          }
+          // Lista antiga, com PDF só neste aparelho: mostra, e a próxima sincronização o envia e apaga a cópia.
+          SC.files.get(l.id).then((rec) => {
+            if (rec) show(new Blob([rec.data], { type: 'application/pdf' }));
+            else fail(`O PDF “${l.pdf.name}” não foi enviado para a nuvem e não está neste aparelho. Abra a lista no aparelho onde você o anexou e sincronize (⟳), ou anexe de novo em Editar.`);
+          });
+        }
+        load();
       },
     };
   };

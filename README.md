@@ -39,6 +39,7 @@ js/screens.js       as 4 telas
 js/modals.js        todos os modais
 js/main.js          ações (data-action), eventos, inicialização
 sw.js               Service Worker (offline; rede primeiro)
+supabase/pdf-storage.sql  bucket + políticas dos PDFs (rodar 1 vez no Supabase)
 manifest.webmanifest  instalável como app (PWA)
 ```
 
@@ -66,7 +67,7 @@ Matéria (lista ou texto livre), tópico, descrição e tipo de erro (7 opções
 
 ### Revisão
 Dois motores independentes com a mesma recorrência SM-2; a nota vem sempre de um botão que você toca.
-- **Listas de exercícios**: você informa nome, matéria (opcional) e **quantos exercícios** a lista tem. Ela entra na fila de hoje e, a cada vez que você refaz, o app pergunta **como foi**: *Foi mal / Mais ou menos / Foi bem* (1/3/5). Mal volta em 1 dia; bem espaça cada vez mais (1ª vez "bem" = 3 dias, depois 6, depois crescendo; teto de 365 dias). **A lista nunca sai do ciclo** — só você a exclui. Dá para anexar o **PDF da lista** (até 25 MB) e vê-lo no site, inclusive na hora de avaliar; o PDF fica só no aparelho (IndexedDB, armário `files`) e **não é sincronizado** — só nome e tamanho viajam com a lista.
+- **Listas de exercícios**: você informa nome, matéria (opcional) e **quantos exercícios** a lista tem. Ela entra na fila de hoje e, a cada vez que você refaz, o app pergunta **como foi**: *Foi mal / Mais ou menos / Foi bem* (1/3/5). Mal volta em 1 dia; bem espaça cada vez mais (1ª vez "bem" = 3 dias, depois 6, depois crescendo; teto de 365 dias). **A lista nunca sai do ciclo** — só você a exclui. Dá para anexar o **PDF da lista** (até 25 MB) e vê-lo no site, inclusive na hora de avaliar. O PDF vai para o **Supabase Storage** (bucket privado `list-pdfs`) e abre em qualquer aparelho (visualizador + abrir em outra aba + baixar). **Nada fica salvo no aparelho**: o PDF é baixado só para a tela e descartado ao fechar (precisa de internet para ver). Com a lista viajam só `pdf: { name, size, path }`. Setup único: rodar `supabase/pdf-storage.sql` no SQL Editor.
 - **Questões**: bookmark de questão (imagem e/ou texto); ao refazer: Errei / Difícil / Fácil (1/3/5). 4 acertos seguidos "graduam" a questão. "Fácil" na 1ª vez agenda 3 dias.
 - **Fila "Hoje"**: vencidos de ambos, em round-robin por matéria (interleaving).
 - Rodadas de fixação do mesmo dia **não** devem ser registradas (decisão de uso).
@@ -74,4 +75,4 @@ Dois motores independentes com a mesma recorrência SM-2; a nota vem sempre de u
 - Revisão de **tópicos** (escada de domínio) foi removida no v15; dados antigos (`topicReviews`) continuam guardados, só sem tela.
 
 ### Persistência e sincronização
-Tudo é salvo automaticamente no **IndexedDB** do navegador (PDFs das listas num armário à parte, fora da sincronização) (e o app pede ao navegador para não apagá-lo). O botão de sincronizar (com senha) envia/recebe os dados pela nuvem: vence a alteração mais recente. Imagens salvas viajam junto, então um banco com muitas imagens deixa a sincronização mais pesada.
+Tudo é salvo automaticamente no **IndexedDB** do navegador (PDFs das listas não ficam no aparelho: vão para o Storage da nuvem) (e o app pede ao navegador para não apagá-lo). O botão de sincronizar (com senha) envia/recebe os dados pela nuvem: vence a alteração mais recente. Imagens salvas viajam junto, então um banco com muitas imagens deixa a sincronização mais pesada.

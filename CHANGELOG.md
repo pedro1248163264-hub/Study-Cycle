@@ -2,6 +2,22 @@
 
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
+## [v16] — PDF das listas na nuvem (Supabase Storage)
+
+### Adicionado
+- **PDF sincronizado entre aparelhos**: ao anexar/trocar o PDF de uma lista, ele é enviado ao bucket privado `list-pdfs`. "Ver PDF" baixa da nuvem só para a tela (blob em memória, `cache: no-store`, descartado ao fechar o modal) — **nenhuma cópia fica no aparelho**; tem *Abrir em outra aba* e *Baixar*. Exige internet.
+- `list.pdf` agora é `{ name, size, path? }`; `path` é o nome do objeto no bucket e viaja com a lista pelo sync normal.
+- **Anexar** envia direto à nuvem (sem internet/senha, não salva e mostra o erro). PDFs de versões anteriores que ficaram só no aparelho sobem no próximo sync e a cópia local é apagada (`SC.cloud.uploadPending`, no fim de `performSync`; se algo subiu, sincroniza de novo uma vez para publicar o `path`).
+- Excluir a lista (ou remover/trocar o PDF) apaga também o arquivo da nuvem (melhor esforço; offline deixa um arquivo órfão).
+
+### Segurança (mesmo modelo do `app_state`)
+Bucket privado; a anon key sozinha não lê/lista/grava. `pdf_grant(senha, caminho, operação)` confere a senha (via `get_app_state`) e libera **um arquivo, uma operação, 10 min**; as políticas de `storage.objects` só aceitam com liberação válida. Tudo em `supabase/pdf-storage.sql` (rodar uma vez).
+
+### Arquivos
+`supabase/pdf-storage.sql` (novo), `js/sync.js` (`SC.cloud`), `js/modals.js` (`exerciseList`, `listPdf`), `js/main.js` (`remove`).
+
+---
+
 ## [v15] — Revisão: listas de exercícios em ciclo; fim da revisão de tópicos
 
 ### Adicionado
