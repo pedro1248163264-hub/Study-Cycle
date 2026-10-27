@@ -1,269 +1,72 @@
 <!DOCTYPE html>
-<html lang="pt-BR" data-theme="dark">
+<html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<!-- Nota (3.9 da auditoria): zoom e seleção de texto são desativados de propósito. Isso é
-     tecnicamente uma penalidade de acessibilidade (WCAG 1.4.4/2.5.4), mas é uma escolha
-     consciente para este app específico: durante o treino, toques rápidos e repetidos no
-     teclado numérico podem disparar double-tap-zoom acidental, o que quebraria o ritmo —
-     e ritmo é o objetivo central do produto. Mantido assim até haver uma decisão explícita
-     de priorizar acessibilidade de zoom sobre fluidez de toque. -->
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#0F172A">
-<title>Mental Math</title>
-<link rel="manifest" href="manifest.json">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Study Cycle</title>
+<meta name="description" content="Organize seus estudos em ciclos inteligentes.">
+<meta name="theme-color" content="#4F46E5">
+
+<link rel="icon" type="image/svg+xml" href="./icons/favicon.svg">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<link rel="manifest" href="./manifest.webmanifest">
+
+<!-- Aplica o tema escuro antes da 1ª pintura (evita o "flash" branco). -->
+<script>try{if(localStorage.getItem('sc-dark')==='1')document.documentElement.classList.add('dark')}catch(e){}</script>
+
+<!-- Fontes: só um extra. Sem internet o app usa fontes do sistema (definidas no CSS)
+     e o Service Worker guarda estas para uso offline. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700;800&family=STIX+Two+Text:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="./css/styles.css">
 </head>
 <body>
-<div id="app">
 
-  <!-- ================= HOME ================= -->
-  <section class="screen active" id="screen-home">
-    <div class="home-top">
-      <h1>Mental <span style="color:var(--accent)">Math</span></h1>
-    </div>
-
-    <div class="card player-card">
-      <div class="pc-row">
-        <div class="lvl-badge"><span id="homeLevel">1</span></div>
-        <div class="pc-main">
-          <div class="eyebrow" data-i18n="level_word">Nível</div>
-          <div class="pc-title" id="homeTitle">Iniciante</div>
-          <div class="xpbar"><i id="homeXpFill"></i></div>
-          <div class="pc-xp" id="homeXpText">0 / 100 XP</div>
-        </div>
+<!-- HEADER -->
+<header class="header">
+  <div class="header-inner">
+    <div class="header-brand">
+      <div class="brand-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-white"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
       </div>
+      <h1>Study Cycle</h1>
     </div>
-
-    <div class="card goal-card">
-      <div class="goal-row">
-        <div class="goal-ring">
-          <svg viewBox="0 0 100 100"><circle class="gr-bg" cx="50" cy="50" r="44"/><circle class="gr-fg" id="goalRingFg" cx="50" cy="50" r="44"/></svg>
-          <div class="goal-center"><b id="goalNum">0</b><span id="goalOf">/ 40</span></div>
-        </div>
-        <div class="goal-main">
-          <div class="eyebrow" data-i18n="home_today">Meta de hoje</div>
-          <div class="goal-sub" id="goalSub">—</div>
-          <div class="streak-box" id="streakBox"><span class="flame">🔥</span><b id="streakNum">0</b><span id="streakLabel">dias seguidos</span></div>
-          <div class="streak-note" id="streakNote"></div>
-        </div>
-      </div>
-      <div class="week-strip" id="weekStrip"></div>
+    <div class="header-actions">
+      <button type="button" class="icon-btn sync-btn" data-action="sync" id="sync-btn" aria-label="Sincronizar dados">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M8 16H3v5"/></svg>
+        <span class="sync-dot" id="sync-dot" hidden></span>
+      </button>
+      <button type="button" class="icon-btn" data-action="theme" aria-label="Alternar modo escuro">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-moon"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+      </button>
+      <button type="button" class="icon-btn" data-action="modal" data-modal="settings" aria-label="Configurações do ciclo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>
+      </button>
     </div>
+  </div>
 
-    <div class="card placement-card hidden" id="placementCard">
-      <h2 data-i18n="placement_card_title">Vamos achar seu ponto de partida</h2>
-      <p data-i18n="placement_card_sub">Contas rápidas em cada trilha ativa.</p>
-    </div>
+  <nav class="nav-tabs" id="nav-tabs"></nav>
 
-    <div id="testBanners"></div>
+  <!-- SYNC STATUS -->
+  <div class="sync-status" id="sync-status"></div>
+</header>
 
-    <button class="btn btn-primary cta" id="btnStart" data-i18n="start_round">Treinar</button>
+<!-- Telas e modais são desenhados pelo JS (js/screens.js e js/modals.js). -->
+<main class="container" id="screen"></main>
+<div id="modal-root"></div>
 
-    <div class="quick-row">
-      <div class="q"><div class="v" id="homeTotal">0</div><div class="l" data-i18n="exercises">Exercícios</div></div>
-      <div class="q"><div class="v" id="homeRounds">0</div><div class="l" data-i18n="sessions">Rodadas</div></div>
-      <div class="q"><div class="v" id="homeCombo">0</div><div class="l" data-i18n="best_streak">Melhor sequência</div></div>
-    </div>
-  </section>
-
-  <!-- ================= TRACKS ================= -->
-  <section class="screen" id="screen-tracks">
-    <div class="navbar"><div class="title" data-i18n="tracks_title">Trilhas</div></div>
-    <p style="margin:-8px 0 14px 0;" data-i18n="tracks_sub">Cada trilha é uma escada de levels.</p>
-    <div id="trackList"></div>
-  </section>
-
-  <!-- ================= TRAINING ================= -->
-  <section class="screen" id="screen-training">
-    <div class="train-top">
-      <button class="pause-btn" id="btnExitTraining" data-i18n-aria="exit_training" aria-label="Sair do treino">✕</button>
-      <div class="hud-bar"><i id="hudBarFill"></i></div>
-      <button class="pause-btn" id="btnPause" aria-label="Pausar">⏸</button>
-    </div>
-    <div class="hud-row">
-      <div class="hud-chip" id="hudChip" data-kind="practice"><span class="cs" id="chipSym">+</span><span class="cn" id="chipName">Soma</span><span class="cl" id="chipLevel"></span><span class="ct" id="chipTag"></span></div>
-      <div class="hud-right"><span class="hud-combo" id="hudCombo"></span><span class="hud-xp" id="hudXp">+0 XP</span></div>
-    </div>
-
-    <div class="equation-zone" id="equationZone">
-      <div class="math-card"><div class="equation" id="equationText">7 × 8</div><div class="xp-pop-wrap" id="xpPop"></div></div>
-      <div class="feedback-answer" id="feedbackAnswer"></div>
-      <div class="feedback-hint" id="feedbackHint"></div>
-      <div class="pulse-strip" id="pulseStrip"></div>
-    </div>
-
-    <div class="answer-zone">
-      <div id="answerDisplay">&nbsp;</div>
-      <div class="keypad" id="keypad"></div>
-    </div>
-
-    <div class="overlay hidden" id="overlayIntro">
-      <div class="ov-card">
-        <div class="ov-sym" id="ovSym">+</div>
-        <div class="eyebrow" id="ovKind"></div>
-        <h2 id="ovTitle"></h2>
-        <p id="ovSub"></p>
-        <div class="ov-goal" id="ovGoal"></div>
-        <div class="ov-tip hidden" id="ovTip"></div>
-        <div class="ov-flash hidden" id="ovFlash"></div>
-        <button class="btn btn-primary" id="ovGo">Vamos!</button>
-      </div>
-    </div>
-    <div class="overlay hidden" id="overlayResult">
-      <div class="ov-card">
-        <div class="ov-sym" id="resSym">+</div>
-        <h2 id="resTitle"></h2>
-        <div class="res-stars" id="resStars"></div>
-        <p id="resLine"></p>
-        <div class="res-note" id="resNote"></div>
-        <div class="res-xp" id="resXp"></div>
-        <button class="btn btn-primary" id="resGo">Continuar</button>
-      </div>
-    </div>
-    <div class="overlay hidden" id="overlayPause">
-      <div class="ov-card">
-        <h2 data-i18n="paused">Pausado</h2>
-        <button class="btn btn-primary" id="btnResume" data-i18n="continue_btn">Continuar</button>
-        <button class="btn btn-ghost" id="btnPauseExit" style="margin-top:10px;" data-i18n="exit_training">Sair do treino</button>
-      </div>
-    </div>
-  </section>
-
-  <!-- ================= SUMMARY ================= -->
-  <section class="screen" id="screen-summary">
-    <div class="sum-hero">
-      <div class="eyebrow" id="sumKicker">Rodada concluída</div>
-      <div class="sum-stars" id="sumStars"></div>
-      <div class="sum-xp" id="sumXp">+0 XP</div>
-      <div class="sum-xp-sub" id="sumXpSub"></div>
-    </div>
-
-    <div class="card">
-      <div class="pc-row">
-        <div class="pc-main">
-          <div class="sum-lvl-row"><b id="sumPlayerLevel">Nível 1</b><span id="sumPlayerTitle"></span><span class="lvl-up hidden" id="sumPlayerUp">▲</span></div>
-          <div class="xpbar"><i id="sumPlayerFill"></i></div>
-          <div class="pc-xp" id="sumPlayerText"></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="sum-lvl-row"><b data-i18n="home_today">Meta de hoje</b><span id="sumGoalCount"></span><span id="sumStreak" class="sum-streak"></span></div>
-      <div class="xpbar goal"><i id="sumGoalFill"></i></div>
-      <div class="pc-xp" id="sumGoalText"></div>
-    </div>
-
-    <div class="card">
-      <div class="metric-grid">
-        <div class="metric"><div class="val" id="sumAcc">-</div><div class="lab" data-i18n="accuracy_cap">Precisão</div></div>
-        <div class="metric"><div class="val" id="sumTarget">-</div><div class="lab" data-i18n="target_rate">Dentro da meta</div></div>
-        <div class="metric"><div class="val" id="sumCombo">-</div><div class="lab" data-i18n="max_combo">Melhor combo</div></div>
-        <div class="metric"><div class="val" id="sumTotal">-</div><div class="lab" data-i18n="exercises">Contas</div></div>
-      </div>
-    </div>
-
-    <div class="card" id="sumTracksCard">
-      <div class="section-title"><h2 data-i18n="by_track">Por trilha</h2></div>
-      <div id="sumTracks"></div>
-    </div>
-
-    <div class="card">
-      <div class="section-title"><h2 data-i18n="rewards">Conquistas</h2></div>
-      <div id="sumRewards"></div>
-    </div>
-
-    <div class="card">
-      <div class="section-title"><h2 data-i18n="biggest_gain">Maior evolução</h2></div>
-      <p id="sumEvolution">—</p>
-      <div class="section-title" style="margin-top:14px;"><h2 data-i18n="main_bottleneck">Ponto de atenção</h2></div>
-      <p id="sumBottleneck">—</p>
-    </div>
-
-    <div class="btn-row sticky-actions">
-      <button class="btn btn-ghost" id="btnFinish" data-i18n="finish">Concluir</button>
-      <button class="btn btn-primary" id="btnAnotherRound" data-i18n="another_round">Mais uma rodada</button>
-    </div>
-    <button class="link-btn" id="btnGoHistory" data-i18n="view_history">Ver histórico</button>
-  </section>
-
-  <!-- ================= STATS ================= -->
-  <section class="screen" id="screen-stats">
-    <div class="navbar"><div class="title" data-i18n="stats_title">Estatísticas</div></div>
-
-    <div class="home-stats">
-      <div class="home-stat"><div class="eyebrow" data-i18n="avg_accuracy">Precisão média</div><div class="v" id="statAcc" style="color:var(--good);">-</div><div class="s" id="statAccSub">-</div></div>
-      <div class="home-stat"><div class="eyebrow" data-i18n="target_rate">Dentro da meta</div><div class="v" id="statTarget" style="color:var(--accent);">-</div><div class="s" id="statTargetSub">-</div></div>
-    </div>
-
-    <div class="card">
-      <div class="section-title"><h2 data-i18n="daily_chart">Contas por dia</h2></div>
-      <svg class="chart" id="chartDaily"></svg>
-    </div>
-    <div class="card">
-      <div class="section-title"><h2 data-i18n="evolution_acc">Evolução — precisão</h2></div>
-      <svg class="chart" id="chartAcc"></svg>
-    </div>
-    <div class="card">
-      <div class="section-title"><h2 data-i18n="evolution_target">Evolução — dentro da meta</h2></div>
-      <svg class="chart" id="chartTarget"></svg>
-    </div>
-
-    <div class="card" id="statTracksCard">
-      <div class="section-title"><h2 data-i18n="by_track">Por trilha</h2></div>
-      <div id="statTracks"></div>
-    </div>
-
-    <div class="card">
-      <div class="metric-grid">
-        <div class="metric"><div class="val" id="histItems">-</div><div class="lab" data-i18n="exercises">Contas</div></div>
-        <div class="metric"><div class="val" id="histRounds">-</div><div class="lab" data-i18n="sessions">Rodadas</div></div>
-        <div class="metric"><div class="val" id="histXp">-</div><div class="lab" data-i18n="xp_word">XP</div></div>
-        <div class="metric"><div class="val" id="histStars">-</div><div class="lab" data-i18n="stars_word">Estrelas</div></div>
-        <div class="metric"><div class="val" id="histCombo">-</div><div class="lab" data-i18n="max_combo">Melhor combo</div></div>
-        <div class="metric"><div class="val" id="histStreakBest">-</div><div class="lab" data-i18n="best_day_streak">Melhor sequência de dias</div></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ================= SETTINGS ================= -->
-  <section class="screen" id="screen-settings">
-    <div class="navbar"><div class="title" data-i18n="settings_title">Ajustes</div></div>
-    <div id="appSettingsList"></div>
-    <div class="app-version">Mental Math v2.0.0</div>
-  </section>
-
-  <nav class="tabbar">
-    <button class="tab active" data-tab="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><path d="M9 22V12h6v10"/></svg><span data-i18n="tab_home">Início</span></button>
-    <button class="tab" data-tab="tracks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h4v-5H4zM10 20h4V9h-4zM16 20h4V4h-4z"/></svg><span data-i18n="tab_tracks">Trilhas</span></button>
-    <button class="tab" data-tab="stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.1-2.8-2.8L7 14"/></svg><span data-i18n="tab_stats">Estatísticas</span></button>
-    <button class="tab" data-tab="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg><span data-i18n="tab_settings">Ajustes</span></button>
-  </nav>
-</div>
-<div class="toast" id="toast"></div>
-<canvas id="confetti"></canvas>
-  <!-- Motor do app dividido em módulos por responsabilidade (assets/js/).
-       São <script> comuns (sem type="module") carregados em ordem de
-       dependência, para que o app funcione também abrindo index.html
-       direto do disco (file://), sem precisar de servidor. -->
-  <script src="assets/js/01-utils.js"></script>
-  <script src="assets/js/02-engine-constants.js"></script>
-  <script src="assets/js/03-i18n.js"></script>
-  <script src="assets/js/04-operations.js"></script>
-  <script src="assets/js/05-expression-terms.js"></script>
-  <script src="assets/js/06-tracks.js"></script>
-  <script src="assets/js/07-storage.js"></script>
-  <script src="assets/js/08-speed-engine.js"></script>
-  <script src="assets/js/09-feedback.js"></script>
-  <script src="assets/js/10-progress.js"></script>
-  <script src="assets/js/11-session.js"></script>
-  <script src="assets/js/12-analytics.js"></script>
-  <script src="assets/js/13-export.js"></script>
-  <script src="assets/js/14-ui.js"></script>
-  <script src="assets/js/15-init.js"></script>
+<!-- Ordem importa: cada arquivo usa os anteriores. Arquivo novo => também em sw.js (APP_FILES). -->
+<script src="./js/icons.js"></script>
+<script src="./js/store.js"></script>
+<script src="./js/logic.js"></script>
+<script src="./js/ui.js"></script>
+<script src="./js/sync.js"></script>
+<script src="./js/ocr.js"></script>
+<script src="./js/screens.js"></script>
+<script src="./js/modals.js"></script>
+<script src="./js/main.js"></script>
 </body>
 </html>
