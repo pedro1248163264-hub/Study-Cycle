@@ -2,6 +2,19 @@
 
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
+## [v18] — Refazer lista: acertos e exercícios errados
+
+### Adicionado
+- No modal **Refazer lista**, bloco opcional de placar: **"Quantos você acertou?"** (0 até o total da lista) e **"Errou algum?"** — digite o nº do exercício (1 até o total) e toque em **Errei**; ele vira uma etiqueta vermelha (toque para remover). Enter também adiciona.
+- Se você só marcar erradas, os acertos são preenchidos sozinhos (total − erradas). Se digitar os acertos à mão, o valor é limitado a total − erradas.
+- O placar é salvo no histórico da revisão (`history[].correct`, `.total`, `.wrong[]`) e aparece no cartão da lista: *"última vez: foi bem (28 out) · 27/30 acertos · erradas: 3, 7, 12"* e no próprio modal na vez seguinte.
+- Totalmente opcional: sem preencher nada, tudo funciona como antes. **Não altera a nota SM-2** — quem decide o agendamento continua sendo o botão Foi mal / Mais ou menos / Foi bem.
+
+### Arquivos
+`js/modals.js` (`listRedo`, `SC.readListScore`), `js/logic.js` (`applyListRedo`), `js/main.js` (`grade`), `js/screens.js` (`scoreText`), `css/styles.css`. Nenhum arquivo novo (sw.js sem mudança).
+
+---
+
 ## [v17] — Revisões pendentes no modal "Próxima matéria"
 
 ### Adicionado

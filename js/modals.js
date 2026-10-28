@@ -395,6 +395,21 @@
   };
 
   // ---------- REVISÃO: REFAZER LISTA ("como foi?") ----------
+  // Placar opcional: "quantos acertei" + números dos exercícios que errei.
+  // Vive só no DOM do modal (data-wrong / campo "correct"); a ação `grade` lê isso
+  // na hora de salvar. Retorna null se nada foi preenchido.
+  SC.readListScore = (total) => {
+    const box = document.querySelector('[data-role="list-score"]');
+    if (!box) return null;
+    const wrong = (box.dataset.wrong || '').split(',').filter(Boolean).map(Number).sort((a, b) => a - b);
+    const raw = box.querySelector('[name="correct"]').value.trim();
+    if (raw === '' && !wrong.length) return null;
+    let correct = raw === '' ? total - wrong.length : parseInt(raw, 10);
+    if (isNaN(correct)) correct = total - wrong.length;
+    correct = Math.max(0, Math.min(correct, total - wrong.length));
+    return { correct, total, wrong };
+  };
+
   SC.modals.listRedo = (m) => {
     const l = col.find('exerciseLists', m.id);
     if (!l) return null;
@@ -408,7 +423,21 @@
           <p><strong>${esc(l.name)}</strong></p>
           <p class="field-help">${esc([l.subject, `${l.total} ${l.total === 1 ? 'exercício' : 'exercícios'}`, `revisão nº ${(l.history || []).length + 1}`].filter(Boolean).join(' · '))}</p>
           ${l.notes ? `<p class="field-help">${esc(l.notes)}</p>` : ''}
-          ${last && SC.LIST_RESULT[last.result] ? `<p class="field-help">Da última vez: ${esc(SC.LIST_RESULT[last.result].toLowerCase())}.</p>` : ''}
+          ${last && SC.LIST_RESULT[last.result] ? `<p class="field-help">Da última vez: ${esc(SC.LIST_RESULT[last.result].toLowerCase())}${esc(SC.scoreText(last))}.</p>` : ''}
+        </div>
+        <div class="list-score" data-role="list-score" data-total="${l.total}" data-wrong="">
+          <div class="field">
+            <label for="f-correct">Quantos você acertou? (opcional, de ${l.total})</label>
+            <input id="f-correct" name="correct" class="text-input" type="number" inputmode="numeric" min="0" max="${l.total}" placeholder="ex: ${Math.max(0, l.total - 2)}">
+          </div>
+          <div class="field">
+            <label for="f-wrong-num">Errou algum? Digite o nº do exercício</label>
+            <div class="list-score-add">
+              <input id="f-wrong-num" class="text-input" type="number" inputmode="numeric" min="1" max="${l.total}" placeholder="de 1 a ${l.total}">
+              <button type="button" class="btn-chip btn-chip-danger" data-role="add-wrong">${icon('x', true)}Errei</button>
+            </div>
+            <div class="list-wrong-chips" data-role="wrong-chips"></div>
+          </div>
         </div>
         ${l.pdf ? `<button type="button" class="btn-chip" data-action="modal" data-modal="listPdf" data-id="${l.id}" data-back="1" style="margin-bottom:1rem">${icon('eye', true)}Ver PDF da lista</button>` : ''}
         <p class="field-help" style="margin-bottom:0.5rem">Como você foi dessa vez?</p>
@@ -418,6 +447,47 @@
         <div class="modal-form-actions" style="margin-top:1.5rem">
           <button type="button" class="btn-secondary-block" data-action="close-modal">Cancelar</button>
         </div>`,
+      wire() {
+        const box = document.querySelector('[data-role="list-score"]');
+        const correctEl = box.querySelector('[name="correct"]');
+        const numEl = box.querySelector('#f-wrong-num');
+        const chipsEl = box.querySelector('[data-role="wrong-chips"]');
+        const total = l.total;
+        let wrong = [];
+        let manual = false; // true quando você digitou os acertos à mão
+
+        const clampCorrect = () => {
+          if (correctEl.value === '') return;
+          const v = Math.max(0, Math.min(parseInt(correctEl.value, 10) || 0, total - wrong.length));
+          correctEl.value = v;
+        };
+        const paint = () => {
+          box.dataset.wrong = wrong.join(',');
+          chipsEl.innerHTML = wrong.map((n) =>
+            `<button type="button" class="wrong-chip" data-n="${n}" aria-label="Remover exercício ${n}">${n}${icon('x', true)}</button>`).join('');
+          if (!manual) correctEl.value = wrong.length ? total - wrong.length : '';
+          else clampCorrect();
+        };
+        const add = () => {
+          const n = parseInt(numEl.value, 10);
+          if (!(n >= 1 && n <= total)) { numEl.focus(); return; }
+          if (!wrong.includes(n)) { wrong.push(n); wrong.sort((a, b) => a - b); }
+          numEl.value = '';
+          paint();
+          numEl.focus();
+        };
+
+        box.querySelector('[data-role="add-wrong"]').addEventListener('click', add);
+        numEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+        chipsEl.addEventListener('click', (e) => {
+          const b = e.target.closest('.wrong-chip');
+          if (!b) return;
+          wrong = wrong.filter((n) => n !== +b.dataset.n);
+          paint();
+        });
+        correctEl.addEventListener('input', () => { manual = correctEl.value !== ''; });
+        correctEl.addEventListener('change', () => { clampCorrect(); if (correctEl.value === '') { manual = false; paint(); } });
+      },
     };
   };
 

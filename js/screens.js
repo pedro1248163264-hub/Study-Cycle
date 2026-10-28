@@ -266,11 +266,19 @@
   const redoChip = (q) => chip('Refazer', 'repeat', 'modal', { modal: 'redo', id: q.id });
   const listRedoChip = (l) => chip('Refazer', 'repeat', 'modal', { modal: 'listRedo', id: l.id });
 
+  // " · 27/30 acertos · erradas: 3, 7" (vazio se a revisão não registrou placar).
+  function scoreText(h) {
+    if (!h || typeof h.correct !== 'number') return '';
+    const wrong = h.wrong || [];
+    const shown = wrong.slice(0, 8).join(', ') + (wrong.length > 8 ? '…' : '');
+    return ` · ${h.correct}/${h.total} acertos` + (wrong.length ? ` · erradas: ${shown}` : '');
+  }
+
   // Cartão de lista: matéria · nº de exercícios · como foi da última vez.
   function listCard(l, { meta, actions }) {
     const last = (l.history || []).slice(-1)[0];
     const lastText = last && LIST_RESULT[last.result]
-      ? `última vez: ${LIST_RESULT[last.result].toLowerCase()} (${formatDate(l.lastReviewedAt)})`
+      ? `última vez: ${LIST_RESULT[last.result].toLowerCase()} (${formatDate(l.lastReviewedAt)})${scoreText(last)}`
       : 'ainda não revisada';
     return logCard({
       main: cardMain({
@@ -455,5 +463,5 @@
   SC.screens['question-review'] = { label: 'Revisão', icon: 'repeat', render: reviewScreen };
   SC.screens.mocks = { label: 'Simulados', icon: 'target', render: mockScreen };
 
-  Object.assign(SC, { STUDY_CATEGORIES, CATEGORY_LABEL, CATEGORY_ICON, ERROR_TYPES, LIST_RESULT, studyLogCard, pendingReviewCards });
+  Object.assign(SC, { STUDY_CATEGORIES, CATEGORY_LABEL, CATEGORY_ICON, ERROR_TYPES, LIST_RESULT, scoreText, studyLogCard, pendingReviewCards });
 })();

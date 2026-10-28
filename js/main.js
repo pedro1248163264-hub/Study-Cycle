@@ -58,8 +58,12 @@
       const name = el.dataset.col || 'questionBank';
       const item = col.find(name, el.dataset.id);
       if (!item) return;
-      const apply = name === 'exerciseLists' ? SC.applyListRedo : SC.applyQuestionRedo;
-      commit(() => col.put(name, apply(item, el.dataset.result)));
+      if (name === 'exerciseLists') {
+        const score = SC.readListScore(item.total);
+        commit(() => col.put(name, SC.applyListRedo(item, el.dataset.result, score)));
+      } else {
+        commit(() => col.put(name, SC.applyQuestionRedo(item, el.dataset.result)));
+      }
     },
 
     // Modal "Próxima matéria" -> aba Revisão (Listas ou Questões) já filtrada pela matéria.

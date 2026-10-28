@@ -188,8 +188,12 @@
   // Refazer lista de exercícios: 'wrong' | 'hard' | 'easy'. Diferente da
   // questão, a lista NUNCA se aposenta: fica no ciclo, e o intervalo cresce
   // a cada "bem" e volta para 1 dia a cada "mal" (até o teto de 365 dias).
-  function applyListRedo(list, result) {
-    return review(list, REDO_QUALITY[result], { result });
+  // `score` (opcional) = { correct, total, wrong: [nºs dos exercícios errados] };
+  // vai junto no histórico, sem alterar a nota SM-2 (quem decide é o botão tocado).
+  function applyListRedo(list, result, score) {
+    return review(list, REDO_QUALITY[result], score
+      ? { result, correct: score.correct, total: score.total, wrong: score.wrong }
+      : { result });
   }
 
   // Round-robin entre matérias: a fila do dia mistura matérias em vez de
