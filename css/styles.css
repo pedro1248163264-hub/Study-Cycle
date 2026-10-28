@@ -1652,3 +1652,5 @@ html.dark .error-badge-green { background-color: rgba(6, 95, 70, 0.25); color: #
 }
 .wrong-chip .icon { width: 0.75rem; height: 0.75rem; }
 html.dark .wrong-chip { background-color: rgba(159, 18, 57, 0.25); border-color: rgba(251, 113, 133, 0.5); color: #FDA4AF; }
+
+.list-progress-note { margin-bottom: 1rem; font-weight: 600; color: var(--primary, #4F46E5); }

@@ -10,6 +10,9 @@ Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) con
 - O placar é salvo no histórico da revisão (`history[].correct`, `.total`, `.wrong[]`) e aparece no cartão da lista: *"última vez: foi bem (28 out) · 27/30 acertos · erradas: 3, 7, 12"* e no próprio modal na vez seguinte.
 - Totalmente opcional: sem preencher nada, tudo funciona como antes. **Não altera a nota SM-2** — quem decide o agendamento continua sendo o botão Foi mal / Mais ou menos / Foi bem.
 
+- **Fiz até o exercício X** (opcional): vazio = lista toda. Preenchido, o placar passa a valer só até ali (acertos ≤ X − erradas; erradas só de 1 a X) e o histórico guarda `upTo`.
+- **Salvar e continuar depois**: grava `list.progress = { upTo, wrong[], correct, at }` **sem avaliar nem reagendar** — a lista continua pendente, o cartão mostra *"parou no ex. 12"*, o botão vira **Continuar** e o modal reabre já com o ponto e as erradas. Dar a nota (Foi mal / Mais ou menos / Foi bem) limpa o progresso.
+
 ### Arquivos
 `js/modals.js` (`listRedo`, `SC.readListScore`), `js/logic.js` (`applyListRedo`), `js/main.js` (`grade`), `js/screens.js` (`scoreText`), `css/styles.css`. Nenhum arquivo novo (sw.js sem mudança).
 

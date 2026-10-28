@@ -46,7 +46,7 @@
     errorLogs: [],     // { id, subject, topic, description, errorType }
     mockExams: [],     // { id, name, date, minutes, rows: [{ subject, correct, total }] }
     topicReviews: [],  // LEGADO (v14): não tem mais tela; preservado nos dados
-    exerciseLists: [], // { id, name, subject, total, notes, pdf: { name, size } | null, createdAt, n, EF, intervalDays, lastReviewedAt, nextReviewAt, history[{ at, quality, intervalDays, result }] }
+    exerciseLists: [], // { id, name, subject, total, notes, pdf: { name, size } | null, progress: { upTo, wrong[], correct|null, at } | null, createdAt, n, EF, intervalDays, lastReviewedAt, nextReviewAt, history[{ at, quality, intervalDays, result }] }
     questionBank: [],  // { id, subject, topic, statementText, imageData, answerKey, resolutionText, resolutionImageData, createdAt, n, EF, intervalDays, lastReviewedAt, nextReviewAt, retired, history[] }
     isDark: false,
 

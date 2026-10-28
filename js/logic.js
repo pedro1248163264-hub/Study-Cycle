@@ -191,9 +191,11 @@
   // `score` (opcional) = { correct, total, wrong: [nºs dos exercícios errados] };
   // vai junto no histórico, sem alterar a nota SM-2 (quem decide é o botão tocado).
   function applyListRedo(list, result, score) {
-    return review(list, REDO_QUALITY[result], score
-      ? { result, correct: score.correct, total: score.total, wrong: score.wrong }
+    const next = review(list, REDO_QUALITY[result], score
+      ? { result, correct: score.correct, total: score.total, wrong: score.wrong, upTo: score.upTo || undefined }
       : { result });
+    next.progress = null; // terminou (ou deu a nota): some o "parei no exercício X"
+    return next;
   }
 
   // Round-robin entre matérias: a fila do dia mistura matérias em vez de

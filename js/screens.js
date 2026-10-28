@@ -264,14 +264,14 @@
   const LIST_RESULT = { wrong: 'Foi mal', hard: 'Mais ou menos', easy: 'Foi bem' };
 
   const redoChip = (q) => chip('Refazer', 'repeat', 'modal', { modal: 'redo', id: q.id });
-  const listRedoChip = (l) => chip('Refazer', 'repeat', 'modal', { modal: 'listRedo', id: l.id });
+  const listRedoChip = (l) => chip(l.progress ? 'Continuar' : 'Refazer', 'repeat', 'modal', { modal: 'listRedo', id: l.id });
 
   // " · 27/30 acertos · erradas: 3, 7" (vazio se a revisão não registrou placar).
   function scoreText(h) {
     if (!h || typeof h.correct !== 'number') return '';
     const wrong = h.wrong || [];
     const shown = wrong.slice(0, 8).join(', ') + (wrong.length > 8 ? '…' : '');
-    return ` · ${h.correct}/${h.total} acertos` + (wrong.length ? ` · erradas: ${shown}` : '');
+    return ` · ${h.correct}/${h.total} acertos${h.upTo ? ` (até o ex. ${h.upTo})` : ''}` + (wrong.length ? ` · erradas: ${shown}` : '');
   }
 
   // Cartão de lista: matéria · nº de exercícios · como foi da última vez.
@@ -284,7 +284,7 @@
       main: cardMain({
         meta,
         title: l.name,
-        detail: [l.subject, plural(l.total, 'exercício', 'exercícios'), lastText].filter(Boolean).join(' · '),
+        detail: [l.subject, plural(l.total, 'exercício', 'exercícios'), l.progress ? `parou no ex. ${l.progress.upTo}` : '', lastText].filter(Boolean).join(' · '),
       }),
       actions: (l.pdf ? [chip('Ver PDF', 'eye', 'modal', { modal: 'listPdf', id: l.id })] : []).concat(actions),
     });

@@ -401,13 +401,17 @@
   SC.readListScore = (total) => {
     const box = document.querySelector('[data-role="list-score"]');
     if (!box) return null;
-    const wrong = (box.dataset.wrong || '').split(',').filter(Boolean).map(Number).sort((a, b) => a - b);
+    const upRaw = parseInt(box.querySelector('[name="upto"]').value, 10);
+    const upTo = upRaw >= 1 && upRaw < total ? upRaw : null; // null = fez a lista toda
+    const done = upTo || total;                              // exercícios feitos nesta vez
+    const wrong = (box.dataset.wrong || '').split(',').filter(Boolean).map(Number)
+      .filter((n) => n <= done).sort((a, b) => a - b);
     const raw = box.querySelector('[name="correct"]').value.trim();
-    if (raw === '' && !wrong.length) return null;
-    let correct = raw === '' ? total - wrong.length : parseInt(raw, 10);
-    if (isNaN(correct)) correct = total - wrong.length;
-    correct = Math.max(0, Math.min(correct, total - wrong.length));
-    return { correct, total, wrong };
+    if (raw === '' && !wrong.length && !upTo) return null;
+    let correct = raw === '' ? done - wrong.length : parseInt(raw, 10);
+    if (isNaN(correct)) correct = done - wrong.length;
+    correct = Math.max(0, Math.min(correct, done - wrong.length));
+    return { correct, total: done, wrong, upTo };
   };
 
   SC.modals.listRedo = (m) => {
@@ -426,8 +430,14 @@
           ${last && SC.LIST_RESULT[last.result] ? `<p class="field-help">Da última vez: ${esc(SC.LIST_RESULT[last.result].toLowerCase())}${esc(SC.scoreText(last))}.</p>` : ''}
         </div>
         <div class="list-score" data-role="list-score" data-total="${l.total}" data-wrong="">
+          ${l.progress ? `<p class="field-help list-progress-note">Você parou no exercício ${l.progress.upTo} de ${l.total}. Continue de onde parou.</p>` : ''}
           <div class="field">
-            <label for="f-correct">Quantos você acertou? (opcional, de ${l.total})</label>
+            <label for="f-upto">Fiz até o exercício (opcional)</label>
+            <input id="f-upto" name="upto" class="text-input" type="number" inputmode="numeric" min="1" max="${l.total}" placeholder="vazio = a lista toda (${l.total})" value="${l.progress ? l.progress.upTo : ''}">
+            <p class="field-help">Vai parar no meio? Marque até onde foi e toque em “Salvar e continuar depois”.</p>
+          </div>
+          <div class="field">
+            <label for="f-correct">Quantos você acertou? (opcional)</label>
             <input id="f-correct" name="correct" class="text-input" type="number" inputmode="numeric" min="0" max="${l.total}" placeholder="ex: ${Math.max(0, l.total - 2)}">
           </div>
           <div class="field">
@@ -438,6 +448,7 @@
             </div>
             <div class="list-wrong-chips" data-role="wrong-chips"></div>
           </div>
+          <button type="button" class="btn-chip" data-role="save-progress" style="margin-top:1rem">${icon('check', true)}Salvar e continuar depois</button>
         </div>
         ${l.pdf ? `<button type="button" class="btn-chip" data-action="modal" data-modal="listPdf" data-id="${l.id}" data-back="1" style="margin-bottom:1rem">${icon('eye', true)}Ver PDF da lista</button>` : ''}
         <p class="field-help" style="margin-bottom:0.5rem">Como você foi dessa vez?</p>
@@ -449,28 +460,32 @@
         </div>`,
       wire() {
         const box = document.querySelector('[data-role="list-score"]');
+        const upEl = box.querySelector('[name="upto"]');
         const correctEl = box.querySelector('[name="correct"]');
         const numEl = box.querySelector('#f-wrong-num');
         const chipsEl = box.querySelector('[data-role="wrong-chips"]');
         const total = l.total;
-        let wrong = [];
-        let manual = false; // true quando você digitou os acertos à mão
+        const prog = l.progress || null;
+        let wrong = prog ? (prog.wrong || []).slice() : [];
+        let manual = !!(prog && typeof prog.correct === 'number'); // true quando você digitou os acertos à mão
+        if (manual) correctEl.value = prog.correct;
 
+        // até onde você foi nesta vez (vazio = lista toda)
+        const limit = () => { const u = parseInt(upEl.value, 10); return u >= 1 && u <= total ? u : total; };
         const clampCorrect = () => {
           if (correctEl.value === '') return;
-          const v = Math.max(0, Math.min(parseInt(correctEl.value, 10) || 0, total - wrong.length));
-          correctEl.value = v;
+          correctEl.value = Math.max(0, Math.min(parseInt(correctEl.value, 10) || 0, limit() - wrong.length));
         };
         const paint = () => {
           box.dataset.wrong = wrong.join(',');
           chipsEl.innerHTML = wrong.map((n) =>
             `<button type="button" class="wrong-chip" data-n="${n}" aria-label="Remover exercício ${n}">${n}${icon('x', true)}</button>`).join('');
-          if (!manual) correctEl.value = wrong.length ? total - wrong.length : '';
+          if (!manual) correctEl.value = wrong.length ? limit() - wrong.length : '';
           else clampCorrect();
         };
         const add = () => {
           const n = parseInt(numEl.value, 10);
-          if (!(n >= 1 && n <= total)) { numEl.focus(); return; }
+          if (!(n >= 1 && n <= limit())) { numEl.focus(); return; }
           if (!wrong.includes(n)) { wrong.push(n); wrong.sort((a, b) => a - b); }
           numEl.value = '';
           paint();
@@ -487,6 +502,23 @@
         });
         correctEl.addEventListener('input', () => { manual = correctEl.value !== ''; });
         correctEl.addEventListener('change', () => { clampCorrect(); if (correctEl.value === '') { manual = false; paint(); } });
+        upEl.addEventListener('change', () => {
+          if (upEl.value !== '') upEl.value = limit();
+          wrong = wrong.filter((n) => n <= limit()); // erradas além de onde você foi não fazem sentido
+          paint();
+        });
+
+        // Parar no meio: guarda até onde foi + erradas/acertos até aqui; a lista continua pendente.
+        box.querySelector('[data-role="save-progress"]').addEventListener('click', () => {
+          const upTo = parseInt(upEl.value, 10);
+          if (!(upTo >= 1 && upTo <= total)) { upEl.focus(); return; }
+          const score = SC.readListScore(total);
+          commit(() => col.patch('exerciseLists', l.id, {
+            progress: { upTo, wrong: score ? score.wrong : [], correct: manual && score ? score.correct : null, at: Date.now() },
+          }));
+        });
+
+        paint();
       },
     };
   };
