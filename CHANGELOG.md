@@ -2,6 +2,21 @@
 
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
+## [v17] — Revisões pendentes no modal "Próxima matéria"
+
+### Adicionado
+- Ao tocar em "Próxima matéria", além de onde você parou em cada material, o modal mostra o que está **pendente de revisão naquela matéria**, separado por tipo: *"Você tem X questões pendentes para revisar"* e *"Você tem Y listas para revisar"* (singular/plural tratados; cada linha só aparece se houver pendência).
+- Botão **Revisar** em cada linha: fecha o modal e abre a aba Revisão (Questões ou Listas) já filtrada pela matéria.
+- Mesmo com a matéria sem nenhum material ativo, as pendências de revisão aparecem abaixo do aviso "Nenhum material ativo".
+
+### Regra de "pendente"
+Igual à da aba Revisão > Hoje: `nextReviewAt <= agora`. Questões graduadas (`retired`) não contam; listas nunca se aposentam. Itens sem matéria não entram em nenhuma contagem (o modal é por matéria).
+
+### Arquivos
+`js/logic.js` (`pendingReviews`), `js/screens.js` (`pendingReviewCards`), `js/modals.js` (`nextMaterial`), `js/main.js` (ação `go-review`).
+
+---
+
 ## [v16] — PDF das listas na nuvem (Supabase Storage)
 
 ### Adicionado

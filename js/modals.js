@@ -213,15 +213,18 @@
     };
   };
 
-  // Aberto ao tocar em "Próxima matéria": só os materiais ativos daquela matéria.
+  // Aberto ao tocar em "Próxima matéria": os materiais ativos daquela matéria
+  // (onde você parou) + o que está pendente de revisão (questões e listas).
   SC.modals.nextMaterial = (m) => {
     const logs = state.studyLogs.filter((l) => l.status === 'active' && l.subject === m.subject);
+    const reviews = SC.pendingReviewCards(m.subject);
     return {
       title: m.subject,
       body: logs.length
-        ? cardList(logs.map((l) => studyLogCard(l, true)))
+        ? cardList(logs.map((l) => studyLogCard(l, true)).concat(reviews))
         : emptyState('bookMarked', 'Nenhum material ativo', `Não há registros de Study Log ativos para ${m.subject}.`,
-          button('Adicionar registro', 'plus', 'modal', { modal: 'studyLog', subject: m.subject }), 'padding:2rem 1rem;'),
+          button('Adicionar registro', 'plus', 'modal', { modal: 'studyLog', subject: m.subject }), 'padding:2rem 1rem;')
+          + (reviews.length ? cardList(reviews) : ''),
     };
   };
 

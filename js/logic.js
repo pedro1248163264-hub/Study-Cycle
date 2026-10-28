@@ -212,6 +212,18 @@
     return result;
   }
 
+  // Quantas listas e questões de UMA matéria estão vencidas agora. Mesma regra
+  // da aba Revisão > Hoje: vence quando nextReviewAt <= agora; questão
+  // graduada (retired) não conta; lista nunca se aposenta.
+  function pendingReviews(state, subject, now) {
+    now = now || Date.now();
+    const due = (x) => x.subject === subject && x.nextReviewAt && x.nextReviewAt <= now;
+    return {
+      lists: state.exerciseLists.filter(due).length,
+      questions: state.questionBank.filter((q) => !q.retired && due(q)).length,
+    };
+  }
+
   // Diferença em DIAS DE CALENDÁRIO (meia-noite a meia-noite), não em blocos
   // de 24h — senão uma questão criada agora aparecia como "Atrasada 1d".
   function calendarDayDiff(targetMs, fromMs) {
@@ -224,6 +236,6 @@
   Object.assign(SC, {
     calculateAllocations, generateSequence, getDerived,
     GRADUATE_AFTER_N, sm2Step, applyQuestionRedo, applyListRedo,
-    interleaveBySubject, calendarDayDiff, formatDate,
+    interleaveBySubject, pendingReviews, calendarDayDiff, formatDate,
   });
 })();

@@ -62,6 +62,17 @@
       commit(() => col.put(name, apply(item, el.dataset.result)));
     },
 
+    // Modal "Próxima matéria" -> aba Revisão (Listas ou Questões) já filtrada pela matéria.
+    'go-review'(el) {
+      const { tab, subject } = el.dataset;
+      state.modal = null;
+      state.ui.screen = 'question-review';
+      state.ui.reviewTab = tab;
+      if (tab === 'questions') state.ui.questionSubTab = 'active';
+      state.ui.filters[tab] = subject ? { subject } : {};
+      render();
+    },
+
     // Cabeçalho
     sync: () => SC.syncNow(),
     theme() { state.isDark = !state.isDark; SC.applyTheme(); saveState(); },

@@ -165,6 +165,30 @@
     return logCard({ cls: !compact && done ? 'is-completed' : '', main: cardMain({ meta, title: log.name, detail: logDetail(log) }), actions });
   }
 
+  // Cartões "Você tem X para revisar" do modal "Próxima matéria": um para
+  // questões e outro para listas (só aparece o que tiver pendência).
+  // O botão leva à aba Revisão já filtrada por essa matéria.
+  function pendingReviewCards(subject) {
+    const { lists, questions } = SC.pendingReviews(state, subject);
+    const card = (tab, text) => logCard({
+      main: cardMain({
+        meta: [`<span class="log-card-category">${icon('repeat')}Revisão</span>`],
+        title: text,
+      }),
+      actions: [chip('Revisar', null, 'go-review', { tab, subject })],
+    });
+    const cards = [];
+    if (questions > 0) {
+      cards.push(card('questions',
+        `Você tem ${questions} ${questions === 1 ? 'questão pendente' : 'questões pendentes'} para revisar`));
+    }
+    if (lists > 0) {
+      cards.push(card('lists',
+        `Você tem ${lists} ${lists === 1 ? 'lista' : 'listas'} para revisar`));
+    }
+    return cards;
+  }
+
   function studyLogScreen() {
     const active = state.studyLogs.filter((l) => l.status === 'active');
     const completed = state.studyLogs.filter((l) => l.status === 'completed');
@@ -431,5 +455,5 @@
   SC.screens['question-review'] = { label: 'Revisão', icon: 'repeat', render: reviewScreen };
   SC.screens.mocks = { label: 'Simulados', icon: 'target', render: mockScreen };
 
-  Object.assign(SC, { STUDY_CATEGORIES, CATEGORY_LABEL, CATEGORY_ICON, ERROR_TYPES, LIST_RESULT, studyLogCard });
+  Object.assign(SC, { STUDY_CATEGORIES, CATEGORY_LABEL, CATEGORY_ICON, ERROR_TYPES, LIST_RESULT, studyLogCard, pendingReviewCards });
 })();
