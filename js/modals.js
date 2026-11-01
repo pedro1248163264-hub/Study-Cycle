@@ -443,12 +443,14 @@
           <div class="field">
             <label for="f-wrong-num">Errou algum? Digite o nº do exercício</label>
             <div class="list-score-add">
-              <input id="f-wrong-num" class="text-input" type="number" inputmode="numeric" min="1" max="${l.total}" placeholder="de 1 a ${l.total}">
+              <input id="f-wrong-num" class="text-input" type="text" inputmode="numeric" autocomplete="off" placeholder="ex: 3 ou 3, 7, 12 (de 1 a ${l.total})">
               <button type="button" class="btn-chip btn-chip-danger" data-role="add-wrong">${icon('x', true)}Errei</button>
             </div>
+            <p class="field-help" data-role="wrong-msg" role="alert" style="color:#E11D48;display:none;margin-top:0.375rem"></p>
             <div class="list-wrong-chips" data-role="wrong-chips"></div>
           </div>
           <button type="button" class="btn-chip" data-role="save-progress" style="margin-top:1rem">${icon('check', true)}Salvar e continuar depois</button>
+          <p class="field-help" data-role="progress-msg" role="alert" style="color:#E11D48;display:none;margin-top:0.375rem"></p>
         </div>
         ${l.pdf ? `<button type="button" class="btn-chip" data-action="modal" data-modal="listPdf" data-id="${l.id}" data-back="1" style="margin-bottom:1rem">${icon('eye', true)}Ver PDF da lista</button>` : ''}
         <p class="field-help" style="margin-bottom:0.5rem">Como você foi dessa vez?</p>
@@ -483,11 +485,28 @@
           if (!manual) correctEl.value = wrong.length ? limit() - wrong.length : '';
           else clampCorrect();
         };
+        const wrongMsg = box.querySelector('[data-role="wrong-msg"]');
+        const progMsg = box.querySelector('[data-role="progress-msg"]');
+        const say = (el, text) => { el.textContent = text || ''; el.style.display = text ? '' : 'none'; };
+        // Aceita um ou vários números: "3", "3, 7, 12", "3 7 12".
         const add = () => {
-          const n = parseInt(numEl.value, 10);
-          if (!(n >= 1 && n <= limit())) { numEl.focus(); return; }
-          if (!wrong.includes(n)) { wrong.push(n); wrong.sort((a, b) => a - b); }
-          numEl.value = '';
+          say(wrongMsg, '');
+          const nums = numEl.value.split(/[^\d]+/).filter(Boolean).map(Number);
+          if (!nums.length) {
+            say(wrongMsg, `Digite o número do exercício (de 1 a ${limit()}). Para vários, separe por vírgula: 3, 7, 12.`);
+            numEl.focus();
+            return;
+          }
+          const max = limit();
+          const bad = nums.filter((n) => n < 1 || n > max);
+          nums.filter((n) => n >= 1 && n <= max).forEach((n) => { if (!wrong.includes(n)) wrong.push(n); });
+          wrong.sort((a, b) => a - b);
+          numEl.value = bad.join(', ');
+          if (bad.length) {
+            say(wrongMsg, max < total
+              ? `Exercício ${bad.join(', ')} está depois de onde você parou (${max}). Mude “Fiz até” ou corrija o número.`
+              : `Exercício ${bad.join(', ')} não existe: a lista vai de 1 a ${max}.`);
+          }
           paint();
           numEl.focus();
         };
@@ -511,7 +530,12 @@
         // Parar no meio: guarda até onde foi + erradas/acertos até aqui; a lista continua pendente.
         box.querySelector('[data-role="save-progress"]').addEventListener('click', () => {
           const upTo = parseInt(upEl.value, 10);
-          if (!(upTo >= 1 && upTo <= total)) { upEl.focus(); return; }
+          if (!(upTo >= 1 && upTo <= total)) {
+            say(progMsg, `Preencha “Fiz até o exercício” (de 1 a ${total}) para salvar e continuar depois.`);
+            upEl.focus();
+            return;
+          }
+          say(progMsg, '');
           const score = SC.readListScore(total);
           commit(() => col.patch('exerciseLists', l.id, {
             progress: { upTo, wrong: score ? score.wrong : [], correct: manual && score ? score.correct : null, at: Date.now() },
