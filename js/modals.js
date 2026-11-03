@@ -266,6 +266,7 @@
           <div data-pdf-area></div>
           <p class="field-help">Vai direto para a nuvem (precisa de internet e da senha de sincronização) e não fica salvo no aparelho: abre em qualquer um, baixando só na hora de ver. Máx. ${MAX_PDF_MB} MB.</p>
         </div>
+        ${inputField({ name: 'reviewPick', label: 'Quais revisar (opcional)', value: l ? l.reviewPick || '' : '', rows: 2, placeholder: 'ex: 26 toda; 1: a,c,d', help: 'Anote só o que vale a pena refazer nas próximas vezes. Texto livre: “26 toda”, “1: a,c,d”… Aparece no cartão e ao refazer a lista.' })}
         ${inputField({ name: 'notes', label: 'Observações (opcional)', value: l ? l.notes || '' : '', rows: 3, placeholder: 'Onde está a lista, página, link…' })}
         ${l ? '' : '<p class="field-help">A lista entra na fila de hoje. Depois de refazê-la, o app pergunta como foi e agenda a próxima vez.</p>'}
         ${formActions({ save: l ? 'Salvar alterações' : 'Adicionar lista' })}`,
@@ -297,7 +298,7 @@
         form = bindForm({
           validate: (v) => v.name.length > 0 && int(v.total) > 0,
           onSave(v) {
-            const fields = { name: v.name, subject: v.subject, total: int(v.total), notes: v.notes };
+            const fields = { name: v.name, subject: v.subject, total: int(v.total), reviewPick: v.reviewPick, notes: v.notes };
             const oldPath = l && l.pdf && l.pdf.path;
             const saveBtn = form.root.querySelector('[data-save]');
             const finish = (pdf) => commit(() => {
@@ -426,6 +427,7 @@
         <div class="review-question-preview">
           <p><strong>${esc(l.name)}</strong></p>
           <p class="field-help">${esc([l.subject, `${l.total} ${l.total === 1 ? 'exercício' : 'exercícios'}`, `revisão nº ${(l.history || []).length + 1}`].filter(Boolean).join(' · '))}</p>
+          ${l.reviewPick ? `<p class="list-pick"><strong>Revisar:</strong> ${esc(l.reviewPick)}</p>` : ''}
           ${l.notes ? `<p class="field-help">${esc(l.notes)}</p>` : ''}
           ${last && SC.LIST_RESULT[last.result] ? `<p class="field-help">Da última vez: ${esc(SC.LIST_RESULT[last.result].toLowerCase())}${esc(SC.scoreText(last))}.</p>` : ''}
         </div>

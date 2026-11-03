@@ -285,7 +285,7 @@
         meta,
         title: l.name,
         detail: [l.subject, plural(l.total, 'exercício', 'exercícios'), l.progress ? `parou no ex. ${l.progress.upTo}` : '', lastText].filter(Boolean).join(' · '),
-      }),
+      }) + (l.reviewPick ? `<p class="log-card-detail list-pick"><strong>Revisar:</strong> ${esc(l.reviewPick)}</p>` : ''),
       actions: (l.pdf ? [chip('Ver PDF', 'eye', 'modal', { modal: 'listPdf', id: l.id })] : []).concat(actions),
     });
   }

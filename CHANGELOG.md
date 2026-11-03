@@ -2,6 +2,18 @@
 
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
+## [v19] — Listas: campo "Quais revisar"
+
+### Adicionado
+- No cadastro/edição da lista, campo opcional de texto livre **"Quais revisar"** (`list.reviewPick`), para anotar só o que vale refazer: `26 toda`, `1: a,c,d`, vários separados por `;` ou quebra de linha.
+- Aparece no cartão da lista (linha **Revisar: …**) e no modal **Refazer lista**.
+- Não afeta SM-2, placar nem progresso. Sincroniza como qualquer campo da lista (a chave `exerciseLists` já está em `SYNCED`).
+
+### Arquivos
+`js/modals.js` (`exerciseList`, `listRedo`), `js/screens.js` (`listCard`), `css/styles.css` (`.list-pick`), `js/store.js` (comentário). Nenhum arquivo novo.
+
+---
+
 ## [v18] — Refazer lista: acertos e exercícios errados
 
 ### Adicionado
