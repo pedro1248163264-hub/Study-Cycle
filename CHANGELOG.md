@@ -2,6 +2,21 @@
 
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
+## [v20] — Pausar matéria
+
+### Adicionado
+- Cada cartão em **Suas matérias** ganhou um botão **Pausar** (ao lado do lápis). A matéria pausada continua no cartão, esmaecida e com o selo **Pausada**, e um botão **Retomar matéria** aparece no rodapé dela.
+- Matéria pausada **sai do ciclo**: não recebe horas semanais (as horas se redistribuem entre as ativas), não aparece na sequência sugerida nem em "Registrar tempo", e não conta no progresso do ciclo.
+- Nada é apagado: horas já feitas, notas (dificuldade/conteúdo/importância), logs, listas e questões continuam como estavam. Ao retomar, ela volta ao ciclo normalmente.
+- Se todas as matérias estiverem pausadas, a sequência avisa isso em vez de "Tudo em dia!".
+- Configurações do ciclo: a checagem de "mínimo de horas por matéria" conta só as matérias ativas.
+- Dado novo: `subject.paused` (booleano, ausente = ativa). Sincroniza junto com `subjects`.
+
+### Arquivos
+`js/logic.js` (`getDerived`), `js/screens.js` (`subjectCards`, `sequenceCard`), `js/main.js` (ação `toggle-pause`), `js/modals.js` (validação), `js/icons.js` (`pause`), `js/store.js` (comentário), `css/styles.css`. Nenhum arquivo novo.
+
+---
+
 ## [v19] — Listas: campo "Quais revisar"
 
 ### Adicionado

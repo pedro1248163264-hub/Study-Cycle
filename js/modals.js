@@ -80,13 +80,13 @@
       inputField({ name, label, help, type: 'number', value: state.settings[name], attrs: `min="${min}" max="${max}"` })).join('')
       + formActions({ save: 'Salvar configurações', cancel: false, saveCls: 'btn-primary-block settings-save' }),
     wire() {
-      const n = state.subjects.length;
+      const n = state.subjects.filter((s) => !s.paused).length;
       bindForm({
         validate(v) {
           const weekly = int(v.weeklyHours), minH = int(v.minHoursPerSubject), streak = int(v.streakHours);
           const win = int(v.windowHours), maxS = int(v.maxSubjectsPerWindow);
           const errors = [];
-          if (n * minH > weekly) errors.push(`Com ${n} matérias e um mínimo de ${minH}h cada, você precisa de pelo menos ${n * minH}h. Aumente o total de horas semanais ou diminua o mínimo.`);
+          if (n * minH > weekly) errors.push(`Com ${n} matérias ativas e um mínimo de ${minH}h cada, você precisa de pelo menos ${n * minH}h. Aumente o total de horas semanais ou diminua o mínimo.`);
           if (streak < 1) errors.push('Horas seguidas por matéria precisa ser pelo menos 1.');
           if ((win > 0) !== (maxS > 0)) errors.push('Para usar a regra de diversidade, preencha tanto a faixa de horas quanto o número máximo de matérias (ou deixe as duas em 0 para desativar).');
           else if (win > 0 && win <= streak) errors.push('A faixa de horas precisa ser maior que as horas seguidas por matéria para fazer diferença.');

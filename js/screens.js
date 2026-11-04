@@ -71,11 +71,12 @@
   function sequenceCard(d) {
     if (!d.nextStudy) {
       const none = d.allocatedSubjects.length === 0;
+      const allPaused = none && d.pausedCount > 0;
       return `
         <div class="sequence-empty">
-          ${icon('checkCircle')}
-          <p class="sequence-empty-title">${none ? 'Adicione matérias para começar' : 'Tudo em dia!'}</p>
-          <p class="sequence-empty-sub">${none ? 'Defina suas matérias e configurações para gerar a sequência.' : 'Registre mais tempo ou reinicie o ciclo.'}</p>
+          ${icon(allPaused ? 'pause' : 'checkCircle')}
+          <p class="sequence-empty-title">${allPaused ? 'Todas as matérias estão pausadas' : none ? 'Adicione matérias para começar' : 'Tudo em dia!'}</p>
+          <p class="sequence-empty-sub">${allPaused ? 'Retome ao menos uma matéria para gerar a sequência.' : none ? 'Defina suas matérias e configurações para gerar a sequência.' : 'Registre mais tempo ou reinicie o ciclo.'}</p>
         </div>`;
     }
     const rest = d.sequence.slice(1, 10);
@@ -102,7 +103,7 @@
   }
 
   function subjectCards(d) {
-    if (d.allocatedSubjects.length === 0) {
+    if (state.subjects.length === 0) {
       return `
         <div class="empty-state">
           <p class="empty-state-title">Nenhuma matéria adicionada</p>
@@ -113,23 +114,33 @@
       <div><div class="subject-stat-label">${label}</div><div class="subject-stat-dots">
         ${[0, 1, 2, 3, 4].map((i) => `<span class="subject-stat-dot${i < value ? ' filled' : ''}"></span>`).join('')}
       </div></div>`;
-    return d.allocatedSubjects.map((s) => {
-      const pct = s.allocated > 0 ? Math.min(100, (s.completedHours / s.allocated) * 100) : 0;
+    // Mantém a ordem em que as matérias foram cadastradas; as pausadas
+    // aparecem junto, esmaecidas, com o botão de retomar.
+    const byId = {};
+    d.allocatedSubjects.forEach((s) => { byId[s.id] = s; });
+    return state.subjects.map((subj) => {
+      const s = byId[subj.id] || subj;
+      const paused = !!subj.paused;
+      const pct = !paused && s.allocated > 0 ? Math.min(100, (s.completedHours / s.allocated) * 100) : 0;
+      const pauseLabel = paused ? 'Retomar' : 'Pausar';
       return `
-      <div class="subject-card">
+      <div class="subject-card${paused ? ' is-paused' : ''}">
+        <button type="button" class="subject-edit-btn subject-pause-btn" data-action="toggle-pause" data-id="${s.id}" aria-label="${pauseLabel} ${esc(s.name)}" title="${pauseLabel}">${icon(paused ? 'play' : 'pause')}</button>
         <button type="button" class="subject-edit-btn" data-action="modal" data-modal="subject" data-id="${s.id}" aria-label="Editar ${esc(s.name)}">${icon('edit')}</button>
         <div class="subject-head">
           <span class="subject-dot subject-color-${s.colorIndex}"></span>
           <h4 class="subject-name">${esc(s.name)}</h4>
+          ${paused ? `<span class="pill-paused">${icon('pause')}Pausada</span>` : ''}
         </div>
         <div class="subject-hours-row">
           <div>
-            <div class="subject-hours">${s.completedHours}<span class="subject-hours-total"> / ${s.allocated}h</span></div>
-            <div class="subject-hours-label">Concluído</div>
+            <div class="subject-hours">${s.completedHours}<span class="subject-hours-total">${paused ? 'h' : ` / ${s.allocated}h`}</span></div>
+            <div class="subject-hours-label">${paused ? 'Concluídas (guardadas)' : 'Concluído'}</div>
           </div>
         </div>
         <div class="subject-progress-track"><div class="subject-progress-fill subject-color-${s.colorIndex}" style="width:${pct}%"></div></div>
         <div class="subject-stats">${stat('Dif.', s.difficulty)}${stat('Cont.', s.content)}${stat('Imp.', s.importance)}</div>
+        ${paused ? `<button type="button" class="btn btn-card-outline subject-resume-btn" data-action="toggle-pause" data-id="${s.id}">${icon('play', true)}Retomar matéria</button>` : ''}
       </div>`;
     }).join('');
   }

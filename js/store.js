@@ -38,7 +38,7 @@
   // ---------- ESTADO ----------
   const state = {
     // Dados (persistidos + sincronizados)
-    subjects: [],      // { id, name, difficulty, content, importance, completedHours, colorIndex, lastStudiedAt }
+    subjects: [],      // { id, name, difficulty, content, importance, completedHours, colorIndex, lastStudiedAt, paused? }
     settings: Object.assign({}, DEFAULT_SETTINGS),
     studyCounter: 0,   // sobe a cada registro de tempo; desempata "há mais tempo sem estudar"
     currentBlock: null, // { subjectId, hoursDone } — bloco de horas seguidas em andamento

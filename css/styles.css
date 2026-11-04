@@ -564,6 +564,36 @@ html.dark .icon-sun { display: block; }
 }
 .subject-edit-btn .icon { width: 1rem; height: 1rem; }
 
+/* botão de pausar fica ao lado do de editar */
+.subject-pause-btn { right: 3rem; }
+.subject-card.is-paused .subject-pause-btn { opacity: 1; }
+
+/* matéria pausada: esmaecida, mas legível e com o botão de retomar em destaque */
+.subject-card.is-paused {
+  border-style: dashed;
+  background-image: repeating-linear-gradient(135deg, transparent 0 10px, rgba(127, 127, 127, 0.05) 10px 20px);
+}
+.subject-card.is-paused .subject-head,
+.subject-card.is-paused .subject-hours-row,
+.subject-card.is-paused .subject-progress-track,
+.subject-card.is-paused .subject-stats { opacity: 0.55; }
+.subject-resume-btn { margin-top: 1rem; width: 100%; justify-content: center; }
+
+.pill-paused {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  color: #B45309;
+  background-color: #FEF3C7;
+  white-space: nowrap;
+}
+.pill-paused .icon { width: 0.75rem; height: 0.75rem; }
+html.dark .pill-paused { color: #FBBF24; background-color: rgba(120, 53, 15, 0.35); }
+
 .subject-head {
   display: flex;
   align-items: center;

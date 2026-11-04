@@ -44,6 +44,16 @@
       persist();
     },
 
+    // Pausa/retoma uma matéria: ela sai (ou volta) do ciclo, sem perder nada.
+    'toggle-pause'(el) {
+      const s = col.find('subjects', el.dataset.id);
+      if (!s) return;
+      col.patch('subjects', s.id, { paused: !s.paused });
+      // Bloco em andamento de uma matéria pausada não faz mais sentido.
+      if (!s.paused && state.currentBlock && state.currentBlock.subjectId === s.id) state.currentBlock = null;
+      persist();
+    },
+
     'reset-cycle'() {
       state.subjects = state.subjects.map((s) => Object.assign({}, s, { completedHours: 0 }));
       state.currentBlock = null;

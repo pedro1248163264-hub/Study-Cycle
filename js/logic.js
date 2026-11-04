@@ -124,13 +124,18 @@
   }
 
   // Tudo que a tela do ciclo precisa, calculado de uma vez.
+  // Matérias pausadas (subject.paused) ficam de fora do ciclo: não recebem
+  // horas, não entram na sequência e não contam no progresso. Os dados
+  // (horas já feitas, notas) ficam guardados e voltam quando reativar.
   function getDerived(state) {
-    const allocatedSubjects = calculateAllocations(state.subjects, state.settings);
+    const activeSubjects = state.subjects.filter((s) => !s.paused);
+    const allocatedSubjects = calculateAllocations(activeSubjects, state.settings);
     const sequence = generateSequence(allocatedSubjects, state.settings, state.currentBlock);
     const totalAllocated = allocatedSubjects.reduce((sum, s) => sum + s.allocated, 0);
-    const totalCompleted = state.subjects.reduce((sum, s) => sum + s.completedHours, 0);
+    const totalCompleted = activeSubjects.reduce((sum, s) => sum + s.completedHours, 0);
     return {
       allocatedSubjects,
+      pausedCount: state.subjects.length - activeSubjects.length,
       sequence,
       totalAllocated,
       totalCompleted,
