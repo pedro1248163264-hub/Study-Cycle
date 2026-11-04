@@ -249,6 +249,15 @@
     return { keys: keys.sort(compareKeys), invalid: Array.from(new Set(invalid)) };
   }
 
+  // "Quais revisar" delimita a lista: "1: a; 3; 11: b, c" => ["1a","3","11b","11c"].
+  // Vazio (ou texto livre com palavras, como "26 toda") = sem escopo: a lista toda.
+  function listScope(list) {
+    const txt = String(list.reviewPick || '');
+    if (!txt.trim() || /[a-zA-Z]{2,}/.test(txt)) return null;
+    const keys = parseExerciseKeys(txt, list.total).keys;
+    return keys.length ? keys : null;
+  }
+
   // Listas antigas (só tinham nota da lista toda + wrong[] no histórico) ganham
   // itens: os errados da última vez voltam em 1 dia; os outros, que passam a
   // contar como certos, mantêm o agendamento que a lista já tinha.
@@ -259,9 +268,10 @@
     if (last && list.lastReviewedAt) {
       const done = last.total || list.total;
       const wrong = (last.wrong || []).map(String);
-      for (let k = 1; k <= done; k++) {
-        const key = String(k);
-        items[key] = wrong.includes(key)
+      const scope = listScope(list);
+      const universe = scope ? scope.filter((k) => keyNum(k) <= done) : Array.from({ length: done }, (_, i) => String(i + 1));
+      for (const key of universe) {
+        items[key] = (wrong.includes(key) || wrong.includes(String(keyNum(key))))
           ? { n: 0, EF: 2.3, intervalDays: 1, lastReviewedAt: list.lastReviewedAt, nextReviewAt: list.lastReviewedAt + MS_PER_DAY, lapses: 1 }
           : { n: list.n || 1, EF: list.EF || 2.5, intervalDays: list.intervalDays || 1, lastReviewedAt: list.lastReviewedAt, nextReviewAt: list.nextReviewAt || Date.now(), lapses: 0 };
       }
@@ -275,21 +285,29 @@
   //  fresh = true quando a lista nunca foi feita (é a lista toda)
   function listDue(list, now, expand) {
     now = now || Date.now();
-    const items = listItems(list);
+    const scope = listScope(list);
+    const all0 = listItems(list);
+    // Só conta o que está em "Quais revisar" (se houver).
+    const items = {};
+    Object.keys(all0).forEach((k) => { if (!scope || scope.includes(k)) items[k] = all0[k]; });
     const keys = Object.keys(items);
-    const fresh = keys.length === 0;
+    const first = keys.length === 0;           // nunca revisada
+    const fresh = first && !scope;             // e sem escopo: é a lista toda
     const due = keys.filter((k) => items[k].nextReviewAt <= now);
-    // exercícios inteiros nunca feitos (além de onde a lista já foi)
+    // exercícios do escopo que nunca foram feitos
     const untouched = [];
-    if (!fresh) for (let k = 1; k <= list.total; k++) if (!items[String(k)] && !keys.some((x) => keyNum(x) === k)) untouched.push(String(k));
+    if (scope) scope.forEach((k) => { if (!items[k]) untouched.push(k); });
+    else if (!fresh) for (let k = 1; k <= list.total; k++) if (!keys.some((x) => keyNum(x) === k)) untouched.push(String(k));
     const prio = (k) => (items[k] ? (items[k].n === 0 ? 0 : 1) : 2);
     const all = due.concat(untouched).sort((a, b) => (prio(a) - prio(b))
       || ((items[a] ? items[a].nextReviewAt : 0) - (items[b] ? items[b].nextReviewAt : 0)) || compareKeys(a, b));
     // Nada vencido (abriu antes da hora): adianta os que vencem primeiro.
-    const early = !fresh && all.length === 0;
+    const early = !first && all.length === 0;
     if (early) keys.sort((a, b) => items[a].nextReviewAt - items[b].nextReviewAt || compareKeys(a, b)).forEach((k) => all.push(k));
     const lapsed = all.filter((k) => items[k] && items[k].n === 0 && items[k].nextReviewAt <= now);
-    return { fresh, early, all, lapsed, today: expand ? all : all.slice(0, Math.max(SESSION_MAX, lapsed.length)), items };
+    // Na 1ª vez faz tudo; depois, limita para não acumular.
+    const today = (expand || first) ? all : all.slice(0, Math.max(SESSION_MAX, lapsed.length));
+    return { fresh, first, early, scope, all, lapsed, today, items };
   }
 
   // Rótulo do exercício: "23a" fica "23a"; o resto do 23 vira "23 (restante)".
@@ -382,7 +400,7 @@
   Object.assign(SC, {
     calculateAllocations, generateSequence, getDerived,
     GRADUATE_AFTER_N, sm2Step, applyQuestionRedo, applyListSession,
-    SESSION_MAX, parseExerciseKeys, listItems, listDue, keyLabel, compareKeys,
+    SESSION_MAX, parseExerciseKeys, listScope, listItems, listDue, keyLabel, compareKeys,
     interleaveBySubject, pendingReviews, calendarDayDiff, formatDate,
   });
 })();

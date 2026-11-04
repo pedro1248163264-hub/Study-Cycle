@@ -267,7 +267,7 @@
           <div data-pdf-area></div>
           <p class="field-help">Vai direto para a nuvem (precisa de internet e da senha de sincronização) e não fica salvo no aparelho: abre em qualquer um, baixando só na hora de ver. Máx. ${MAX_PDF_MB} MB.</p>
         </div>
-        ${inputField({ name: 'reviewPick', label: 'Quais revisar (opcional)', value: l ? l.reviewPick || '' : '', rows: 2, placeholder: 'ex: 26 toda; 1: a,c,d', help: 'Anote só o que vale a pena refazer nas próximas vezes. Texto livre: “26 toda”, “1: a,c,d”… Aparece no cartão e ao refazer a lista.' })}
+        ${inputField({ name: 'reviewPick', label: 'Quais revisar (opcional)', value: l ? l.reviewPick || '' : '', rows: 2, placeholder: 'ex: 1: a, c; 2; 3: b', help: 'Só estes exercícios entram na revisão. Número sozinho = o exercício inteiro; com letras = só aqueles itens. Separe com “;”. Vazio = a lista toda.' })}
         ${inputField({ name: 'notes', label: 'Observações (opcional)', value: l ? l.notes || '' : '', rows: 3, placeholder: 'Onde está a lista, página, link…' })}
         ${l ? '' : '<p class="field-help">A lista entra na fila de hoje. Depois de refazê-la, o app pergunta como foi e agenda a próxima vez.</p>'}
         ${formActions({ save: l ? 'Salvar alterações' : 'Adicionar lista' })}`,
@@ -407,13 +407,13 @@
     const lastLine = last && typeof last.correct === 'number'
       ? `Última vez (${SC.formatDate(l.lastReviewedAt)}): ${last.correct}/${last.total} certas${(last.wrong || []).length ? ` · erradas: ${(last.wrong || []).slice(0, 8).join(', ')}${last.wrong.length > 8 ? '…' : ''}` : ''}`
       : '';
-    const notes = [l.reviewPick ? `<p class="list-pick"><strong>Revisar:</strong> ${esc(l.reviewPick)}</p>` : '', l.notes ? `<p class="field-help">${esc(l.notes)}</p>` : ''].join('');
+    const notes = [l.notes ? `<p class="field-help">${esc(l.notes)}</p>` : ''].join('');
     return {
       title: 'Refazer lista',
       body: `
         <div class="redo-head">
           <p class="redo-name">${esc(l.name)}</p>
-          <p class="field-help">${esc([l.subject, plural(l.total, 'exercício', 'exercícios'), `revisão nº ${(l.history || []).length + 1}`].filter(Boolean).join(' · '))}</p>
+          <p class="field-help">${esc([l.subject, SC.listScope(l) ? `${SC.listScope(l).length} em “Quais revisar”` : plural(l.total, 'exercício', 'exercícios'), `revisão nº ${(l.history || []).length + 1}`].filter(Boolean).join(' · '))}</p>
           ${lastLine ? `<p class="field-help">${esc(lastLine)}</p>` : ''}
         </div>
 
@@ -482,8 +482,10 @@
 
         function paintDue() {
           const d = due();
-          if (d.fresh) {
-            dueEl.innerHTML = `<p class="redo-fresh">Primeira vez: a lista toda <span>(1 a ${total})</span></p>`;
+          if (d.first) {
+            dueEl.innerHTML = d.scope
+              ? `<p class="redo-fresh">Primeira vez: os ${d.scope.length} itens de “Quais revisar”</p>`
+              : `<p class="redo-fresh">Primeira vez: a lista toda <span>(1 a ${total})</span></p>`;
             return;
           }
           const lap = new Set(d.lapsed);
@@ -509,6 +511,16 @@
         function add() {
           say(wrongMsg, '');
           const r = SC.parseExerciseKeys(numEl.value, total);
+          const scope = SC.listScope(l);
+          if (scope) { // número sozinho = todos os itens daquele número no escopo
+            const out = [];
+            r.keys.forEach((k) => {
+              if (scope.includes(k)) out.push(k);
+              else if (!/[a-z]$/i.test(k) && scope.some((x) => parseInt(x, 10) === +k)) scope.filter((x) => parseInt(x, 10) === +k).forEach((x) => out.push(x));
+              else r.invalid.push(k);
+            });
+            r.keys = out;
+          }
           const max = limit();
           const late = r.keys.filter((k) => parseInt(k, 10) > max);
           r.keys.filter((k) => parseInt(k, 10) <= max).forEach((k) => { if (!wrong.includes(k)) wrong.push(k); });
@@ -517,7 +529,7 @@
           numEl.value = bad.join(', ');
           if (!r.keys.length && !bad.length) say(wrongMsg, 'Digite o número (e a letra, se tiver): 3, 7, 23a, 23: a-b.');
           else if (late.length) say(wrongMsg, `${late.join(', ')} está depois de onde você parou (${max}).`);
-          else if (r.invalid.length) say(wrongMsg, `Não entendi: ${r.invalid.join(', ')}. A lista vai de 1 a ${total}.`);
+          else if (r.invalid.length) say(wrongMsg, scope ? `Fora de “Quais revisar”: ${r.invalid.join(', ')}.` : `Não entendi: ${r.invalid.join(', ')}. A lista vai de 1 a ${total}.`);
           paint();
           numEl.focus();
         }

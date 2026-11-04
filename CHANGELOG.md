@@ -2,6 +2,16 @@
 
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
+## [v21.1] — "Quais revisar" delimita a revisão
+
+- Se a lista tem "Quais revisar" (ex.: `1: a; 2: c; 3; 11: b, c`), **só esses exercícios** entram na revisão; o resto da lista é ignorado. Número sozinho = exercício inteiro; com letras = só aqueles itens. Vazio, ou texto livre com palavras (ex.: "26 toda"), = lista toda.
+- Na 1ª vez faz todos os itens do escopo (sem limite de 10). Marcar erro aceita só itens do escopo; digitar `24` marca todos os itens de 24 do escopo (ex.: `24c`).
+- Listas já revisadas migram respeitando o escopo (errada "24" vira `24c`).
+- Campo "Quais revisar" ganhou exemplo curto; sai de "Anotações" no modal e aparece no cabeçalho ("30 em Quais revisar").
+- Arquivos: `js/logic.js` (`listScope`, `listDue`, `listItems`), `js/modals.js`.
+
+---
+
 ## [v21] — Listas: revisão por exercício (retenção ativa)
 
 ### Mudou
