@@ -190,16 +190,151 @@
     return next;
   }
 
-  // Refazer lista de exercícios: 'wrong' | 'hard' | 'easy'. Diferente da
-  // questão, a lista NUNCA se aposenta: fica no ciclo, e o intervalo cresce
-  // a cada "bem" e volta para 1 dia a cada "mal" (até o teto de 365 dias).
-  // `score` (opcional) = { correct, total, wrong: [nºs dos exercícios errados] };
-  // vai junto no histórico, sem alterar a nota SM-2 (quem decide é o botão tocado).
-  function applyListRedo(list, result, score) {
-    const next = review(list, REDO_QUALITY[result], score
-      ? { result, correct: score.correct, total: score.total, wrong: score.wrong, upTo: score.upTo || undefined }
-      : { result });
-    next.progress = null; // terminou (ou deu a nota): some o "parei no exercício X"
+  // ---------- LISTAS: REVISÃO POR EXERCÍCIO ----------
+  // Cada exercício da lista tem o próprio agendamento SM-2 (list.items).
+  // Chave do exercício: "7" (inteiro) ou "23a" (item de dentro do 23).
+  //   list.items[chave] = { n, EF, intervalDays, lastReviewedAt, nextReviewAt, lapses }
+  // Quem você erra volta no dia seguinte; quem você acerta vai espaçando.
+  // Exercício que nunca foi feito não tem entrada em items (= pendente).
+  const SESSION_MAX = 10; // teto de exercícios por sessão (errados sempre primeiro)
+
+  const keyNum = (k) => parseInt(k, 10);
+  const keyLetter = (k) => (String(k).match(/[a-z]+$/i) || [''])[0].toLowerCase();
+  const compareKeys = (a, b) => (keyNum(a) - keyNum(b)) || keyLetter(a).localeCompare(keyLetter(b));
+
+  // Lê "3, 7, 23a, 23: a-b; 5-8; 22: e-g" e devolve { keys[], invalid[] }.
+  // Aceita número, número+letra, intervalos de números (5-8) e de letras (a-c).
+  function parseExerciseKeys(text, max) {
+    const toks = [];
+    const re = /(\d+)|([a-zA-Z])|([-–—])|(:)|([;\n])/g;
+    let m;
+    while ((m = re.exec(String(text || '')))) {
+      if (m[1]) toks.push({ t: 'n', v: parseInt(m[1], 10) });
+      else if (m[2]) toks.push({ t: 'l', v: m[2].toLowerCase() });
+      else if (m[3]) toks.push({ t: 'd' });
+      else if (m[4]) toks.push({ t: 'c' });
+      else toks.push({ t: 's' });
+    }
+    const found = {}; // número -> { whole, letters:Set }
+    const invalid = [];
+    const entry = (n) => (found[n] = found[n] || { whole: false, letters: new Set() });
+    let cur = null;
+    for (let i = 0; i < toks.length; i++) {
+      const t = toks[i], prev = toks[i - 1], next = toks[i + 1];
+      if (t.t === 'n') {
+        if (prev && prev.t === 'd' && toks[i - 2] && toks[i - 2].t === 'n') { // 5-8
+          for (let k = toks[i - 2].v + 1; k <= t.v && k - toks[i - 2].v < 200; k++) entry(k).whole = true;
+          cur = t.v;
+        } else { cur = t.v; entry(cur).whole = true; }
+        if (t.v < 1 || t.v > max) invalid.push(String(t.v));
+      } else if (t.t === 'l') {
+        // "3 e 5": o "e" aqui é "e", não a letra e
+        if (t.v === 'e' && prev && prev.t === 'n' && next && next.t === 'n') continue;
+        if (cur == null) { invalid.push(t.v); continue; }
+        const e = entry(cur);
+        e.whole = false;
+        if (next && next.t === 'd' && toks[i + 2] && toks[i + 2].t === 'l') { // a-c
+          const to = toks[i + 2].v.charCodeAt(0);
+          for (let c = t.v.charCodeAt(0); c <= to; c++) e.letters.add(String.fromCharCode(c));
+          i += 2;
+        } else e.letters.add(t.v);
+      } else if (t.t === 's') cur = null;
+    }
+    const keys = [];
+    Object.keys(found).map(Number).filter((n) => n >= 1 && n <= max).forEach((n) => {
+      const e = found[n];
+      if (e.whole || !e.letters.size) keys.push(String(n));
+      else e.letters.forEach((l) => keys.push(n + l));
+    });
+    return { keys: keys.sort(compareKeys), invalid: Array.from(new Set(invalid)) };
+  }
+
+  // Listas antigas (só tinham nota da lista toda + wrong[] no histórico) ganham
+  // itens: os errados da última vez voltam em 1 dia; os outros, que passam a
+  // contar como certos, mantêm o agendamento que a lista já tinha.
+  function listItems(list) {
+    if (list.items) return list.items;
+    const items = {};
+    const last = (list.history || []).slice(-1)[0];
+    if (last && list.lastReviewedAt) {
+      const done = last.total || list.total;
+      const wrong = (last.wrong || []).map(String);
+      for (let k = 1; k <= done; k++) {
+        const key = String(k);
+        items[key] = wrong.includes(key)
+          ? { n: 0, EF: 2.3, intervalDays: 1, lastReviewedAt: list.lastReviewedAt, nextReviewAt: list.lastReviewedAt + MS_PER_DAY, lapses: 1 }
+          : { n: list.n || 1, EF: list.EF || 2.5, intervalDays: list.intervalDays || 1, lastReviewedAt: list.lastReviewedAt, nextReviewAt: list.nextReviewAt || Date.now(), lapses: 0 };
+      }
+    }
+    return items;
+  }
+
+  // O que fazer agora numa lista: vencidos + nunca feitos, errados primeiro.
+  //  all   = tudo que está pendente, na ordem de prioridade
+  //  today = só os primeiros SESSION_MAX (ou todos, se expand)
+  //  fresh = true quando a lista nunca foi feita (é a lista toda)
+  function listDue(list, now, expand) {
+    now = now || Date.now();
+    const items = listItems(list);
+    const keys = Object.keys(items);
+    const fresh = keys.length === 0;
+    const due = keys.filter((k) => items[k].nextReviewAt <= now);
+    // exercícios inteiros nunca feitos (além de onde a lista já foi)
+    const untouched = [];
+    if (!fresh) for (let k = 1; k <= list.total; k++) if (!items[String(k)] && !keys.some((x) => keyNum(x) === k)) untouched.push(String(k));
+    const prio = (k) => (items[k] ? (items[k].n === 0 ? 0 : 1) : 2);
+    const all = due.concat(untouched).sort((a, b) => (prio(a) - prio(b))
+      || ((items[a] ? items[a].nextReviewAt : 0) - (items[b] ? items[b].nextReviewAt : 0)) || compareKeys(a, b));
+    // Nada vencido (abriu antes da hora): adianta os que vencem primeiro.
+    const early = !fresh && all.length === 0;
+    if (early) keys.sort((a, b) => items[a].nextReviewAt - items[b].nextReviewAt || compareKeys(a, b)).forEach((k) => all.push(k));
+    const lapsed = all.filter((k) => items[k] && items[k].n === 0 && items[k].nextReviewAt <= now);
+    return { fresh, early, all, lapsed, today: expand ? all : all.slice(0, Math.max(SESSION_MAX, lapsed.length)), items };
+  }
+
+  // Rótulo do exercício: "23a" fica "23a"; o resto do 23 vira "23 (restante)".
+  function keyLabel(key, items) {
+    if (/[a-z]$/i.test(key)) return key;
+    const hasParts = Object.keys(items || {}).some((k) => keyNum(k) === keyNum(key) && /[a-z]$/i.test(k));
+    return hasParts ? `${key} (restante)` : key;
+  }
+
+  // Fecha uma sessão: `session` = { keys[] (o que estava na sessão), wrong[], hard, upTo, total }
+  // Tudo da sessão que você não marcou como errado conta como certo.
+  function applyListSession(list, session) {
+    const now = Date.now();
+    const items = Object.assign({}, listItems(list));
+    const wrong = session.wrong.slice();
+    const wrongNums = new Set(wrong.filter((k) => !/[a-z]$/i.test(k)).map(keyNum));
+    const reviewed = new Set(session.keys);
+    wrong.forEach((k) => reviewed.add(k)); // "23a" pode não estar na sessão ainda
+    // errou o exercício inteiro: os itens soltos dele (23a…) são redundantes
+    const targets = Array.from(reviewed).filter((k) => !(/[a-z]$/i.test(k) && wrongNums.has(keyNum(k))));
+    let right = 0;
+    targets.forEach((k) => {
+      const it = items[k] || { n: 0, EF: 2.5, intervalDays: 0, lapses: 0 };
+      const isWrong = wrong.includes(k);
+      const step = sm2Step(it.n || 0, it.EF || 2.5, it.intervalDays || 1, isWrong ? 1 : (session.hard ? 3 : 5));
+      if (!isWrong) right += 1;
+      items[k] = {
+        n: step.n, EF: step.EF, intervalDays: step.intervalDays,
+        lastReviewedAt: now, nextReviewAt: now + step.intervalDays * MS_PER_DAY,
+        lapses: (it.lapses || 0) + (isWrong ? 1 : 0),
+      };
+    });
+    Object.keys(items).forEach((k) => { if (/[a-z]$/i.test(k) && wrongNums.has(keyNum(k)) && !targets.includes(k)) delete items[k]; });
+    const entry = {
+      at: now, correct: right, total: right + wrong.length, wrong: wrong.slice().sort(compareKeys),
+      upTo: session.upTo || undefined, hard: session.hard || undefined,
+      result: wrong.length === 0 ? (session.hard ? 'hard' : 'easy') : (wrong.length > (right + wrong.length) / 2 ? 'wrong' : 'hard'),
+    };
+    const next = Object.assign({}, list, { items, progress: null, lastReviewedAt: now, history: (list.history || []).concat([entry]) });
+    next.n = next.history.length;
+    // A lista vence quando o primeiro exercício vencer (ou já, se sobrou exercício nunca feito).
+    const times = Object.keys(items).map((k) => items[k].nextReviewAt);
+    const untouched = listDue(next, now).all.some((k) => !items[k]);
+    next.nextReviewAt = untouched ? now : (times.length ? Math.min.apply(null, times) : now);
+    next.intervalDays = Math.max(1, calendarDayDiff(next.nextReviewAt, now));
     return next;
   }
 
@@ -246,7 +381,8 @@
 
   Object.assign(SC, {
     calculateAllocations, generateSequence, getDerived,
-    GRADUATE_AFTER_N, sm2Step, applyQuestionRedo, applyListRedo,
+    GRADUATE_AFTER_N, sm2Step, applyQuestionRedo, applyListSession,
+    SESSION_MAX, parseExerciseKeys, listItems, listDue, keyLabel, compareKeys,
     interleaveBySubject, pendingReviews, calendarDayDiff, formatDate,
   });
 })();

@@ -277,25 +277,25 @@
   const redoChip = (q) => chip('Refazer', 'repeat', 'modal', { modal: 'redo', id: q.id });
   const listRedoChip = (l) => chip(l.progress ? 'Continuar' : 'Refazer', 'repeat', 'modal', { modal: 'listRedo', id: l.id });
 
-  // " · 27/30 acertos · erradas: 3, 7" (vazio se a revisão não registrou placar).
+  // " · 21/26 certas · erradas: 3, 7" (vazio se a revisão não registrou placar).
   function scoreText(h) {
     if (!h || typeof h.correct !== 'number') return '';
     const wrong = h.wrong || [];
     const shown = wrong.slice(0, 8).join(', ') + (wrong.length > 8 ? '…' : '');
-    return ` · ${h.correct}/${h.total} acertos${h.upTo ? ` (até o ex. ${h.upTo})` : ''}` + (wrong.length ? ` · erradas: ${shown}` : '');
+    return ` · ${h.correct}/${h.total} certas${h.upTo ? ` (até o ex. ${h.upTo})` : ''}` + (wrong.length ? ` · erradas: ${shown}` : '');
   }
 
-  // Cartão de lista: matéria · nº de exercícios · como foi da última vez.
+  // Cartão de lista: matéria · nº de exercícios · quantos faltam refazer · última vez.
   function listCard(l, { meta, actions }) {
     const last = (l.history || []).slice(-1)[0];
-    const lastText = last && LIST_RESULT[last.result]
-      ? `última vez: ${LIST_RESULT[last.result].toLowerCase()} (${formatDate(l.lastReviewedAt)})${scoreText(last)}`
-      : 'ainda não revisada';
+    const lastText = last ? `última vez (${formatDate(l.lastReviewedAt)})${scoreText(last)}` : 'ainda não revisada';
+    const d = SC.listDue(l);
+    const todo = !last || d.early ? '' : (d.all.length ? `${plural(d.all.length, 'exercício', 'exercícios')} para refazer` : '');
     return logCard({
       main: cardMain({
         meta,
         title: l.name,
-        detail: [l.subject, plural(l.total, 'exercício', 'exercícios'), l.progress ? `parou no ex. ${l.progress.upTo}` : '', lastText].filter(Boolean).join(' · '),
+        detail: [l.subject, plural(l.total, 'exercício', 'exercícios'), todo, l.progress ? `parou no ex. ${l.progress.upTo}` : '', lastText].filter(Boolean).join(' · '),
       }) + (l.reviewPick ? `<p class="log-card-detail list-pick"><strong>Revisar:</strong> ${esc(l.reviewPick)}</p>` : ''),
       actions: (l.pdf ? [chip('Ver PDF', 'eye', 'modal', { modal: 'listPdf', id: l.id })] : []).concat(actions),
     });

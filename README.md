@@ -12,7 +12,7 @@ Site estático (HTML + CSS + JS puro, **sem build**) para organizar ciclos de es
 | **Study Log** | O que você está estudando agora e onde parou (livro, vídeo, questões). |
 | **Error Log** | O que você errou e por quê, com filtros. |
 | **Simulados** | Provas completas por matéria, tempo e comparação com o simulado anterior. |
-| **Revisão** | Listas de exercícios em ciclo de repetição (você diz como foi a cada vez) e SM-2 para questões individuais (texto/imagem, OCR, resolução). |
+| **Revisão** | Listas de exercícios com revisão por exercício (marque só os que errou)  e SM-2 para questões individuais (texto/imagem, OCR, resolução). |
 
 As telas são independentes: nada nelas altera a alocação de horas do Study Cycle.
 

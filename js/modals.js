@@ -12,6 +12,7 @@
   const { state, esc, uid, col, icon, inputField, selectField, selectControl, subjectField, choice, ratingRow,
     formActions, bindForm, commit, closeModal, emptyState, button, cardList, studyLogCard } = Object.assign({}, SC);
 
+  const plural = SC.plural || ((n, one, many) => `${n} ${n === 1 ? one : many}`);
   const int = (v, fallback) => parseInt(v, 10) || fallback || 0;
   const pick = (obj, keys) => keys.reduce((o, k) => { o[k] = obj[k]; return o; }, {});
 
@@ -395,155 +396,169 @@
     };
   };
 
-  // ---------- REVISÃO: REFAZER LISTA ("como foi?") ----------
-  // Placar opcional: "quantos acertei" + números dos exercícios que errei.
-  // Vive só no DOM do modal (data-wrong / campo "correct"); a ação `grade` lê isso
-  // na hora de salvar. Retorna null se nada foi preenchido.
-  SC.readListScore = (total) => {
-    const box = document.querySelector('[data-role="list-score"]');
-    if (!box) return null;
-    const upRaw = parseInt(box.querySelector('[name="upto"]').value, 10);
-    const upTo = upRaw >= 1 && upRaw < total ? upRaw : null; // null = fez a lista toda
-    const done = upTo || total;                              // exercícios feitos nesta vez
-    const wrong = (box.dataset.wrong || '').split(',').filter(Boolean).map(Number)
-      .filter((n) => n <= done).sort((a, b) => a - b);
-    const raw = box.querySelector('[name="correct"]').value.trim();
-    if (raw === '' && !wrong.length && !upTo) return null;
-    let correct = raw === '' ? done - wrong.length : parseInt(raw, 10);
-    if (isNaN(correct)) correct = done - wrong.length;
-    correct = Math.max(0, Math.min(correct, done - wrong.length));
-    return { correct, total: done, wrong, upTo };
-  };
-
+  // ---------- REVISÃO: REFAZER LISTA ----------
+  // Cada exercício tem a própria revisão (ver logic.js, listDue/applyListSession):
+  // o que você marcar como errado volta amanhã; o resto conta como certo e vai
+  // espaçando. A sessão mostra só o que venceu (máx. SESSION_MAX), errados primeiro.
   SC.modals.listRedo = (m) => {
     const l = col.find('exerciseLists', m.id);
     if (!l) return null;
     const last = (l.history || []).slice(-1)[0];
-    const grade = (result, cls, ico, label) =>
-      `<button type="button" class="quality-btn quality-btn-${cls}" data-action="grade" data-col="exerciseLists" data-id="${l.id}" data-result="${result}">${icon(ico)}${label}</button>`;
+    const lastLine = last && typeof last.correct === 'number'
+      ? `Última vez (${SC.formatDate(l.lastReviewedAt)}): ${last.correct}/${last.total} certas${(last.wrong || []).length ? ` · erradas: ${(last.wrong || []).slice(0, 8).join(', ')}${last.wrong.length > 8 ? '…' : ''}` : ''}`
+      : '';
+    const notes = [l.reviewPick ? `<p class="list-pick"><strong>Revisar:</strong> ${esc(l.reviewPick)}</p>` : '', l.notes ? `<p class="field-help">${esc(l.notes)}</p>` : ''].join('');
     return {
       title: 'Refazer lista',
       body: `
-        <div class="review-question-preview">
-          <p><strong>${esc(l.name)}</strong></p>
-          <p class="field-help">${esc([l.subject, `${l.total} ${l.total === 1 ? 'exercício' : 'exercícios'}`, `revisão nº ${(l.history || []).length + 1}`].filter(Boolean).join(' · '))}</p>
-          ${l.reviewPick ? `<p class="list-pick"><strong>Revisar:</strong> ${esc(l.reviewPick)}</p>` : ''}
-          ${l.notes ? `<p class="field-help">${esc(l.notes)}</p>` : ''}
-          ${last && SC.LIST_RESULT[last.result] ? `<p class="field-help">Da última vez: ${esc(SC.LIST_RESULT[last.result].toLowerCase())}${esc(SC.scoreText(last))}.</p>` : ''}
+        <div class="redo-head">
+          <p class="redo-name">${esc(l.name)}</p>
+          <p class="field-help">${esc([l.subject, plural(l.total, 'exercício', 'exercícios'), `revisão nº ${(l.history || []).length + 1}`].filter(Boolean).join(' · '))}</p>
+          ${lastLine ? `<p class="field-help">${esc(lastLine)}</p>` : ''}
         </div>
-        <div class="list-score" data-role="list-score" data-total="${l.total}" data-wrong="">
-          ${l.progress ? `<p class="field-help list-progress-note">Você parou no exercício ${l.progress.upTo} de ${l.total}. Continue de onde parou.</p>` : ''}
-          <div class="field">
-            <label for="f-upto">Fiz até o exercício (opcional)</label>
-            <input id="f-upto" name="upto" class="text-input" type="number" inputmode="numeric" min="1" max="${l.total}" placeholder="vazio = a lista toda (${l.total})" value="${l.progress ? l.progress.upTo : ''}">
-            <p class="field-help">Vai parar no meio? Marque até onde foi e toque em “Salvar e continuar depois”.</p>
-          </div>
-          <div class="field">
-            <label for="f-correct">Quantos você acertou? (opcional)</label>
-            <input id="f-correct" name="correct" class="text-input" type="number" inputmode="numeric" min="0" max="${l.total}" placeholder="ex: ${Math.max(0, l.total - 2)}">
-          </div>
-          <div class="field">
-            <label for="f-wrong-num">Errou algum? Digite o nº do exercício</label>
-            <div class="list-score-add">
-              <input id="f-wrong-num" class="text-input" type="text" inputmode="numeric" autocomplete="off" placeholder="ex: 3 ou 3, 7, 12 (de 1 a ${l.total})">
-              <button type="button" class="btn-chip btn-chip-danger" data-role="add-wrong">${icon('x', true)}Errei</button>
-            </div>
-            <p class="field-help" data-role="wrong-msg" role="alert" style="color:#E11D48;display:none;margin-top:0.375rem"></p>
-            <div class="list-wrong-chips" data-role="wrong-chips"></div>
-          </div>
-          <button type="button" class="btn-chip" data-role="save-progress" style="margin-top:1rem">${icon('check', true)}Salvar e continuar depois</button>
-          <p class="field-help" data-role="progress-msg" role="alert" style="color:#E11D48;display:none;margin-top:0.375rem"></p>
+
+        <div class="redo-block">
+          <div class="redo-label">Fazer agora</div>
+          <div data-role="due"></div>
         </div>
-        ${l.pdf ? `<button type="button" class="btn-chip" data-action="modal" data-modal="listPdf" data-id="${l.id}" data-back="1" style="margin-bottom:1rem">${icon('eye', true)}Ver PDF da lista</button>` : ''}
-        <p class="field-help" style="margin-bottom:0.5rem">Como você foi dessa vez?</p>
-        <div class="quality-buttons">
-          ${grade('wrong', 'wrong', 'x', SC.LIST_RESULT.wrong)}${grade('hard', 'hard', 'alertCircle', SC.LIST_RESULT.hard)}${grade('easy', 'easy', 'check', SC.LIST_RESULT.easy)}
+
+        <div class="redo-block field">
+          <label for="f-wrong-num">Errou algum?</label>
+          <div class="list-score-add">
+            <input id="f-wrong-num" class="text-input" type="text" autocomplete="off" placeholder="ex: 3, 7, 23a, 23: a-b">
+            <button type="button" class="btn-chip btn-chip-danger" data-role="add-wrong">Marcar</button>
+          </div>
+          <p class="field-help" data-role="wrong-msg" role="alert" style="color:#E11D48;display:none"></p>
+          <div class="list-wrong-chips" data-role="wrong-chips"></div>
+          <p class="field-help">O que você não marcar conta como certo.</p>
         </div>
-        <div class="modal-form-actions" style="margin-top:1.5rem">
+
+        <div class="redo-block field">
+          <label>Nas que acertou, teve dificuldade?</label>
+          <div class="seg" role="group">
+            <button type="button" class="seg-btn is-on" data-hard="0">Não, tranquilo</button>
+            <button type="button" class="seg-btn" data-hard="1">Sim, com dificuldade</button>
+          </div>
+        </div>
+
+        <details class="redo-more">
+          <summary>Não fez tudo?</summary>
+          <div class="field">
+            <label for="f-upto">Fiz até o exercício</label>
+            <input id="f-upto" name="upto" class="text-input" type="number" inputmode="numeric" min="1" max="${l.total}" placeholder="vazio = tudo acima" value="${l.progress ? l.progress.upTo : ''}">
+            <p class="field-help">“Concluir” avalia só até aí; o resto continua pendente.</p>
+          </div>
+          <button type="button" class="btn-chip" data-role="save-progress">${icon('check', true)}Salvar e continuar depois</button>
+          <p class="field-help" data-role="progress-msg" role="alert" style="color:#E11D48;display:none"></p>
+        </details>
+
+        ${notes ? `<details class="redo-more"><summary>Anotações da lista</summary>${notes}</details>` : ''}
+        ${l.pdf ? `<button type="button" class="btn-chip" data-action="modal" data-modal="listPdf" data-id="${l.id}" data-back="1" style="margin-top:0.75rem">${icon('eye', true)}Ver PDF da lista</button>` : ''}
+
+        <div class="redo-footer">
+          <p class="redo-summary" data-role="summary"></p>
+          <button type="button" class="btn-primary-block" data-role="finish">Concluir revisão</button>
           <button type="button" class="btn-secondary-block" data-action="close-modal">Cancelar</button>
         </div>`,
       wire() {
-        const box = document.querySelector('[data-role="list-score"]');
-        const upEl = box.querySelector('[name="upto"]');
-        const correctEl = box.querySelector('[name="correct"]');
-        const numEl = box.querySelector('#f-wrong-num');
-        const chipsEl = box.querySelector('[data-role="wrong-chips"]');
+        const q = (sel) => document.querySelector(sel);
+        const dueEl = q('[data-role="due"]'), chipsEl = q('[data-role="wrong-chips"]'), numEl = q('#f-wrong-num');
+        const wrongMsg = q('[data-role="wrong-msg"]'), progMsg = q('[data-role="progress-msg"]');
+        const upEl = q('#f-upto'), sumEl = q('[data-role="summary"]');
         const total = l.total;
         const prog = l.progress || null;
-        let wrong = prog ? (prog.wrong || []).slice() : [];
-        let manual = !!(prog && typeof prog.correct === 'number'); // true quando você digitou os acertos à mão
-        if (manual) correctEl.value = prog.correct;
-
-        // até onde você foi nesta vez (vazio = lista toda)
-        const limit = () => { const u = parseInt(upEl.value, 10); return u >= 1 && u <= total ? u : total; };
-        const clampCorrect = () => {
-          if (correctEl.value === '') return;
-          correctEl.value = Math.max(0, Math.min(parseInt(correctEl.value, 10) || 0, limit() - wrong.length));
-        };
-        const paint = () => {
-          box.dataset.wrong = wrong.join(',');
-          chipsEl.innerHTML = wrong.map((n) =>
-            `<button type="button" class="wrong-chip" data-n="${n}" aria-label="Remover exercício ${n}">${n}${icon('x', true)}</button>`).join('');
-          if (!manual) correctEl.value = wrong.length ? limit() - wrong.length : '';
-          else clampCorrect();
-        };
-        const wrongMsg = box.querySelector('[data-role="wrong-msg"]');
-        const progMsg = box.querySelector('[data-role="progress-msg"]');
+        let wrong = prog ? (prog.wrong || []).map(String) : [];
+        let hard = !!(prog && prog.hard);
+        let expand = false;
         const say = (el, text) => { el.textContent = text || ''; el.style.display = text ? '' : 'none'; };
-        // Aceita um ou vários números: "3", "3, 7, 12", "3 7 12".
-        const add = () => {
-          say(wrongMsg, '');
-          const nums = numEl.value.split(/[^\d]+/).filter(Boolean).map(Number);
-          if (!nums.length) {
-            say(wrongMsg, `Digite o número do exercício (de 1 a ${limit()}). Para vários, separe por vírgula: 3, 7, 12.`);
-            numEl.focus();
+        const limit = () => { const u = parseInt(upEl.value, 10); return u >= 1 && u <= total ? u : total; };
+        const due = () => SC.listDue(l, Date.now(), expand);
+        // exercícios que esta sessão cobre (respeitando "fiz até")
+        const sessionKeys = () => {
+          const d = due();
+          if (d.fresh) return Array.from({ length: limit() }, (_, i) => String(i + 1));
+          return d.today.filter((k) => parseInt(k, 10) <= limit());
+        };
+
+        function paintDue() {
+          const d = due();
+          if (d.fresh) {
+            dueEl.innerHTML = `<p class="redo-fresh">Primeira vez: a lista toda <span>(1 a ${total})</span></p>`;
             return;
           }
+          const lap = new Set(d.lapsed);
+          const chip = (k) => `<span class="due-chip${lap.has(k) ? ' is-lapsed' : ''}">${esc(SC.keyLabel(k, d.items))}</span>`;
+          const hidden = d.all.length - d.today.length;
+          dueEl.innerHTML = `
+            ${d.early ? '<p class="field-help">Nada venceu ainda. Estes são os próximos a vencer.</p>' : ''}
+            <div class="due-chips">${d.today.map(chip).join('')}</div>
+            ${d.lapsed.length ? '<p class="field-help"><span class="legend-dot"></span>Em vermelho: você errou na última vez.</p>' : ''}
+            ${hidden > 0 ? `<button type="button" class="btn-chip" data-role="more">+ ${hidden} que também venceram</button>` : ''}`;
+          const more = dueEl.querySelector('[data-role="more"]');
+          if (more) more.addEventListener('click', () => { expand = true; paintDue(); paint(); });
+        }
+
+        function paint() {
+          chipsEl.innerHTML = wrong.map((k) =>
+            `<button type="button" class="wrong-chip" data-k="${k}" aria-label="Desmarcar ${k}">${esc(k)}${icon('x', true)}</button>`).join('');
+          const keys = sessionKeys();
+          const right = keys.filter((k) => !wrong.includes(k)).length;
+          sumEl.textContent = keys.length ? `${right} certas · ${wrong.length} ${wrong.length === 1 ? 'errada' : 'erradas'}` : '';
+        }
+
+        function add() {
+          say(wrongMsg, '');
+          const r = SC.parseExerciseKeys(numEl.value, total);
           const max = limit();
-          const bad = nums.filter((n) => n < 1 || n > max);
-          nums.filter((n) => n >= 1 && n <= max).forEach((n) => { if (!wrong.includes(n)) wrong.push(n); });
-          wrong.sort((a, b) => a - b);
+          const late = r.keys.filter((k) => parseInt(k, 10) > max);
+          r.keys.filter((k) => parseInt(k, 10) <= max).forEach((k) => { if (!wrong.includes(k)) wrong.push(k); });
+          wrong.sort(SC.compareKeys);
+          const bad = r.invalid.concat(late);
           numEl.value = bad.join(', ');
-          if (bad.length) {
-            say(wrongMsg, max < total
-              ? `Exercício ${bad.join(', ')} está depois de onde você parou (${max}). Mude “Fiz até” ou corrija o número.`
-              : `Exercício ${bad.join(', ')} não existe: a lista vai de 1 a ${max}.`);
-          }
+          if (!r.keys.length && !bad.length) say(wrongMsg, 'Digite o número (e a letra, se tiver): 3, 7, 23a, 23: a-b.');
+          else if (late.length) say(wrongMsg, `${late.join(', ')} está depois de onde você parou (${max}).`);
+          else if (r.invalid.length) say(wrongMsg, `Não entendi: ${r.invalid.join(', ')}. A lista vai de 1 a ${total}.`);
           paint();
           numEl.focus();
-        };
+        }
 
-        box.querySelector('[data-role="add-wrong"]').addEventListener('click', add);
+        q('[data-role="add-wrong"]').addEventListener('click', add);
         numEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
         chipsEl.addEventListener('click', (e) => {
           const b = e.target.closest('.wrong-chip');
           if (!b) return;
-          wrong = wrong.filter((n) => n !== +b.dataset.n);
+          wrong = wrong.filter((k) => k !== b.dataset.k);
           paint();
         });
-        correctEl.addEventListener('input', () => { manual = correctEl.value !== ''; });
-        correctEl.addEventListener('change', () => { clampCorrect(); if (correctEl.value === '') { manual = false; paint(); } });
+        document.querySelectorAll('.seg-btn').forEach((b) => b.addEventListener('click', () => {
+          hard = b.dataset.hard === '1';
+          document.querySelectorAll('.seg-btn').forEach((x) => x.classList.toggle('is-on', x === b));
+        }));
+        document.querySelectorAll('.seg-btn').forEach((x) => x.classList.toggle('is-on', (x.dataset.hard === '1') === hard));
         upEl.addEventListener('change', () => {
           if (upEl.value !== '') upEl.value = limit();
-          wrong = wrong.filter((n) => n <= limit()); // erradas além de onde você foi não fazem sentido
+          wrong = wrong.filter((k) => parseInt(k, 10) <= limit());
           paint();
         });
 
-        // Parar no meio: guarda até onde foi + erradas/acertos até aqui; a lista continua pendente.
-        box.querySelector('[data-role="save-progress"]').addEventListener('click', () => {
+        q('[data-role="save-progress"]').addEventListener('click', () => {
           const upTo = parseInt(upEl.value, 10);
-          if (!(upTo >= 1 && upTo <= total)) {
-            say(progMsg, `Preencha “Fiz até o exercício” (de 1 a ${total}) para salvar e continuar depois.`);
-            upEl.focus();
-            return;
-          }
+          if (!(upTo >= 1 && upTo <= total)) { say(progMsg, `Preencha “Fiz até o exercício” (de 1 a ${total}).`); upEl.focus(); return; }
           say(progMsg, '');
-          const score = SC.readListScore(total);
-          commit(() => col.patch('exerciseLists', l.id, {
-            progress: { upTo, wrong: score ? score.wrong : [], correct: manual && score ? score.correct : null, at: Date.now() },
-          }));
+          commit(() => col.patch('exerciseLists', l.id, { progress: { upTo, wrong: wrong.slice(), hard, at: Date.now() } }));
         });
 
+        q('[data-role="finish"]').addEventListener('click', () => {
+          const keys = sessionKeys();
+          if (!keys.length && !wrong.length) { say(wrongMsg, 'Não há exercícios nesta sessão.'); return; }
+          const upTo = parseInt(upEl.value, 10);
+          commit(() => col.put('exerciseLists', SC.applyListSession(l, {
+            keys, wrong: wrong.slice(), hard, upTo: upTo >= 1 && upTo < total ? upTo : null,
+          })));
+        });
+
+        if (prog && prog.hard !== undefined) hard = !!prog.hard;
+        paintDue();
         paint();
       },
     };

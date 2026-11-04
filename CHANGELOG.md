@@ -2,6 +2,25 @@
 
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
+## [v21] — Listas: revisão por exercício (retenção ativa)
+
+### Mudou
+- **Cada exercício tem o próprio SM-2** (`list.items["7"]`, `["23a"]`). Errou → volta em 1 dia; acertou → 3 dias (ou 1, se teve dificuldade), depois 6, depois ×EF. A lista só "vence" quando algum exercício vence (`list.nextReviewAt` = o menor).
+- **Sessão enxuta**: o modal mostra só o que venceu, **errados primeiro** (em vermelho), máx. 10 por vez (`SESSION_MAX`); botão "+ N que também venceram" mostra o resto.
+- **Sem nota geral** (Foi mal / Mais ou menos / Foi bem) e **sem "Quantos você acertou?"**: tudo que não for marcado como errado conta como certo. Única pergunta restante: "Nas que acertou, teve dificuldade?" (Não / Sim).
+- **Erros aceitam número e letra**: `3, 7`, `23a`, `23: a-b`, `5-8`, `22: e-g`. Cada item vira um exercício próprio; o resto do 23 aparece como "23 (restante)".
+- **Modal reorganizado**: cabeçalho → Fazer agora → Errou algum? → Dificuldade → Concluir. "Fiz até o exercício / Salvar e continuar depois", "Anotações" (Revisar/observações) e PDF ficam recolhidos.
+- **Listas antigas migram sozinhas** na 1ª abertura (`listItems`): os `wrong[]` da última revisão voltam amanhã; os outros mantêm o agendamento que a lista já tinha.
+- Cartão da lista mostra "N exercícios para refazer" e a última vez como "21/26 certas · erradas: …".
+
+### Dados
+`exerciseLists[].items` (novo, sincroniza junto) e `history[].hard`. `history[].wrong` agora guarda chaves em texto ("23a").
+
+### Arquivos
+`js/logic.js` (`parseExerciseKeys`, `listItems`, `listDue`, `applyListSession`; `applyListRedo` removida), `js/modals.js` (`listRedo`), `js/main.js` (`grade` só para questões), `js/screens.js` (`listCard`, `scoreText`), `css/styles.css`. Nenhum arquivo novo.
+
+---
+
 ## [v20] — Pausar matéria
 
 ### Adicionado

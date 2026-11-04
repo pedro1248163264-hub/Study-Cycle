@@ -63,17 +63,12 @@
     // Revisão: questão do banco e lista de exercícios
     revive(el) { col.patch('questionBank', el.dataset.id, { retired: false, n: 0, nextReviewAt: Date.now() }); persist(); },
     reveal(el) { state.modal[el.dataset.what] = true; render(); }, // mostra gabarito/resolução
-    // data-col: 'questionBank' (padrão) ou 'exerciseLists'. A nota vem do botão tocado.
+    // Nota de uma questão do banco (Errei / Difícil / Fácil). Listas de
+    // exercícios são avaliadas dentro do próprio modal (modals.js, listRedo).
     grade(el) {
-      const name = el.dataset.col || 'questionBank';
-      const item = col.find(name, el.dataset.id);
+      const item = col.find('questionBank', el.dataset.id);
       if (!item) return;
-      if (name === 'exerciseLists') {
-        const score = SC.readListScore(item.total);
-        commit(() => col.put(name, SC.applyListRedo(item, el.dataset.result, score)));
-      } else {
-        commit(() => col.put(name, SC.applyQuestionRedo(item, el.dataset.result)));
-      }
+      commit(() => col.put('questionBank', SC.applyQuestionRedo(item, el.dataset.result)));
     },
 
     // Modal "Próxima matéria" -> aba Revisão (Listas ou Questões) já filtrada pela matéria.
