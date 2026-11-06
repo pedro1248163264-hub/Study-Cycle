@@ -9,10 +9,9 @@
 (function () {
   'use strict';
   const SC = window.SC;
-  const { state, esc, uid, col, icon, inputField, selectField, selectControl, subjectField, choice, ratingRow,
-    formActions, bindForm, commit, closeModal, emptyState, button, cardList, studyLogCard } = Object.assign({}, SC);
+  const { state, esc, uid, col, icon, inputField, selectField, subjectField, choice, ratingRow,
+    formActions, bindForm, commit, closeModal, emptyState, button, cardList, studyLogCard, plural } = Object.assign({}, SC);
 
-  const plural = SC.plural || ((n, one, many) => `${n} ${n === 1 ? one : many}`);
   const int = (v, fallback) => parseInt(v, 10) || fallback || 0;
   const pick = (obj, keys) => keys.reduce((o, k) => { o[k] = obj[k]; return o; }, {});
 

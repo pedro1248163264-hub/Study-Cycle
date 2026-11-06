@@ -1667,7 +1667,6 @@ html.dark .error-badge-green { background-color: rgba(6, 95, 70, 0.25); color: #
 .pdf-attached span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Refazer lista: placar (acertos + exercícios errados) */
-.list-score { margin-bottom: 1.25rem; }
 .list-score-add { display: flex; gap: 0.5rem; align-items: center; }
 .list-score-add .text-input { flex: 1; min-width: 0; }
 .list-score-add .btn-chip { flex-shrink: 0; padding: 0.625rem 0.875rem; }
@@ -1685,7 +1684,6 @@ html.dark .wrong-chip { background-color: rgba(159, 18, 57, 0.25); border-color:
 
 .list-pick { white-space: pre-line; margin: 0.25rem 0 0; font-size: 0.875rem; color: var(--primary, #4F46E5); }
 .list-pick strong { font-weight: 600; }
-.list-progress-note { margin-bottom: 1rem; font-weight: 600; color: var(--primary, #4F46E5); }
 
 /* Refazer lista (v21): cabeçalho, exercícios da sessão, seletor, rodapé */
 .redo-head { margin-bottom: 1.25rem; }

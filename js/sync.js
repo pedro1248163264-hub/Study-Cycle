@@ -211,7 +211,7 @@
 
   Object.assign(SC, {
     syncNow, performSync, renderSyncStatus,
-    sync: { codeExists, claimCode, setCode, hasCode: () => !!getCode() },
+    sync: { codeExists, claimCode, setCode },
     cloud: { upload: uploadPdf, download: downloadPdf, remove: removePdf, uploadPending },
   });
 })();

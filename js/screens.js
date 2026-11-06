@@ -474,5 +474,5 @@
   SC.screens['question-review'] = { label: 'Revisão', icon: 'repeat', render: reviewScreen };
   SC.screens.mocks = { label: 'Simulados', icon: 'target', render: mockScreen };
 
-  Object.assign(SC, { STUDY_CATEGORIES, CATEGORY_LABEL, CATEGORY_ICON, ERROR_TYPES, LIST_RESULT, scoreText, studyLogCard, pendingReviewCards });
+  Object.assign(SC, { plural, STUDY_CATEGORIES, CATEGORY_LABEL, CATEGORY_ICON, ERROR_TYPES, LIST_RESULT, scoreText, studyLogCard, pendingReviewCards });
 })();

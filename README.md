@@ -35,7 +35,7 @@ js/logic.js         cálculo do ciclo e SM-2 (funções puras)
 js/sync.js          sincronização Supabase (última alteração vence)
 js/ocr.js           redimensionar imagem + OCR (Tesseract, baixado sob demanda)
 js/ui.js            peças reutilizáveis: botões, cartões, filtros, abas, campos, bindForm
-js/screens.js       as 4 telas
+js/screens.js       as 5 telas
 js/modals.js        todos os modais
 js/main.js          ações (data-action), eventos, inicialização
 sw.js               Service Worker (offline; rede primeiro)
