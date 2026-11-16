@@ -1733,3 +1733,15 @@ html.dark .due-chip.is-wrong { border-color: #FB7185; background-color: #BE123C;
   .redo-layout .redo-pdf .pdf-frame { height: calc(100vh - 13rem); }
 }
 .due-chip.is-later { opacity: 0.5; }
+
+/* v22: acertou com dificuldade (laranja) + gabarito por exercício */
+.due-chip.is-hard { border-color: #F59E0B; background-color: #F59E0B; color: #fff; }
+html.dark .due-chip.is-hard { border-color: #FBBF24; background-color: #B45309; color: #fff; }
+.wrong-chip.hard-chip { border-color: #F59E0B; background-color: #FFFBEB; color: #B45309; }
+html.dark .wrong-chip.hard-chip { background-color: rgba(180, 83, 9, 0.25); border-color: rgba(251, 191, 36, 0.5); color: #FCD34D; }
+.btn-chip-hard { border-color: #F59E0B; color: #B45309; }
+html.dark .btn-chip-hard { border-color: #FBBF24; color: #FCD34D; }
+.gab-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: 0.375rem 0.5rem; margin: 0.5rem 0; max-height: 18rem; overflow-y: auto; }
+.gab-row { display: flex; align-items: center; gap: 0.375rem; font-size: 0.8125rem; font-weight: 600; }
+.gab-row > span { min-width: 2rem; text-align: right; color: var(--muted-foreground, #64748B); }
+.gab-row .text-input { padding: 0.375rem 0.5rem; font-size: 0.875rem; min-width: 0; }

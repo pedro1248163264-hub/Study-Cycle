@@ -153,20 +153,31 @@
   const GRADUATE_AFTER_N = 4; // acertos seguidos até a questão sair da fila ativa
   const REDO_QUALITY = { wrong: 1, hard: 3, easy: 5 };
 
+  // Agendamento (v22). Regras fixas na 1ª vez que acerta (ou depois de um erro):
+  //   errou                 -> amanhã (1 dia) e recomeça
+  //   acertou com dificuldade -> 3 dias
+  //   acertou tranquilo       -> 5 dias
+  // Depois, o intervalo cresce a cada acerto:
+  //   tranquilo -> anterior x (EF x 0,85)   (EF 2,5 => ~x2,1: 5, 11, 23, 49, 104…)
+  //   dificuldade -> anterior x ~1,25 (cresce devagar, no mínimo +1 dia)
+  // EF ("facilidade", 1,3 a 2,8) sobe um pouco com acertos tranquilos e cai com
+  // dificuldade/erro, então o que é difícil para VOCÊ espaça menos. Teto: 365 dias.
+  // quality: 1 = errou, 3 = acertou com dificuldade, 5 = acertou tranquilo.
   function sm2Step(n, EF, prevIntervalDays, quality) {
-    let interval, nextN;
-    if (quality >= 3) {
-      // "Fácil" (5) logo na 1ª vez pula para 3 dias; "Difícil" (3) fica em 1.
-      if (n === 0) interval = quality >= 5 ? 3 : 1;
-      else if (n === 1) interval = 6;
-      else interval = Math.round(prevIntervalDays * EF);
-      nextN = n + 1;
-    } else {
-      nextN = 0;
-      interval = 1;
+    EF = EF || 2.5;
+    if (quality < 3) {
+      return { n: 0, EF: Math.max(1.3, EF - 0.2), intervalDays: 1 };
     }
-    const nextEF = Math.max(1.3, EF + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)));
-    return { n: nextN, EF: nextEF, intervalDays: Math.min(interval, MAX_INTERVAL_DAYS) };
+    const hard = quality < 5;
+    const nextEF = hard ? Math.max(1.3, EF - 0.15) : Math.min(2.8, EF + 0.05);
+    let interval;
+    if (n === 0) interval = hard ? 3 : 5;
+    else {
+      const prev = Math.max(1, prevIntervalDays || 1);
+      const mult = hard ? Math.max(1.2, EF * 0.5) : EF * 0.85;
+      interval = Math.max(prev + 1, Math.round(prev * mult));
+    }
+    return { n: n + 1, EF: nextEF, intervalDays: Math.min(interval, MAX_INTERVAL_DAYS) };
   }
 
   // Aplica uma nota a um item de revisão (tópico OU questão) e agenda a próxima.
@@ -319,23 +330,32 @@
     return hasParts ? `${key} (restante)` : key;
   }
 
-  // Fecha uma sessão: `session` = { keys[] (o que estava na sessão), wrong[], hard, upTo, total }
-  // Tudo da sessão que você não marcou como errado conta como certo.
+  // Fecha uma sessão: `session` = { keys[] (o que estava na sessão), wrong[], hardKeys[], upTo }
+  //  - wrong: errou -> volta amanhã
+  //  - hardKeys: acertou, mas com dificuldade -> 3 dias
+  //  - o resto da sessão: acertou tranquilo -> 5 dias
+  // (session.hard === true, do formato antigo, vale para todos os acertos.)
   function applyListSession(list, session) {
     const now = Date.now();
     const items = Object.assign({}, listItems(list));
     const wrong = session.wrong.slice();
     const wrongNums = new Set(wrong.filter((k) => !/[a-z]$/i.test(k)).map(keyNum));
+    const hardKeys = (session.hardKeys || []).map(String);
+    const hardNums = new Set(hardKeys.filter((k) => !/[a-z]$/i.test(k)).map(keyNum));
+    const isHard = (k) => session.hard === true || hardKeys.includes(k) || hardNums.has(keyNum(k));
     const reviewed = new Set(session.keys);
     wrong.forEach((k) => reviewed.add(k)); // "23a" pode não estar na sessão ainda
+    hardKeys.forEach((k) => reviewed.add(k));
     // errou o exercício inteiro: os itens soltos dele (23a…) são redundantes
     const targets = Array.from(reviewed).filter((k) => !(/[a-z]$/i.test(k) && wrongNums.has(keyNum(k))));
-    let right = 0;
+    let right = 0, hardCount = 0;
     targets.forEach((k) => {
       const it = items[k] || { n: 0, EF: 2.5, intervalDays: 0, lapses: 0 };
       const isWrong = wrong.includes(k);
-      const step = sm2Step(it.n || 0, it.EF || 2.5, it.intervalDays || 1, isWrong ? 1 : (session.hard ? 3 : 5));
+      const hard = !isWrong && isHard(k);
+      const step = sm2Step(it.n || 0, it.EF || 2.5, it.intervalDays || 1, isWrong ? 1 : (hard ? 3 : 5));
       if (!isWrong) right += 1;
+      if (hard) hardCount += 1;
       items[k] = {
         n: step.n, EF: step.EF, intervalDays: step.intervalDays,
         lastReviewedAt: now, nextReviewAt: now + step.intervalDays * MS_PER_DAY,
@@ -345,17 +365,74 @@
     Object.keys(items).forEach((k) => { if (/[a-z]$/i.test(k) && wrongNums.has(keyNum(k)) && !targets.includes(k)) delete items[k]; });
     const entry = {
       at: now, correct: right, total: right + wrong.length, wrong: wrong.slice().sort(compareKeys),
-      upTo: session.upTo || undefined, hard: session.hard || undefined,
-      result: wrong.length === 0 ? (session.hard ? 'hard' : 'easy') : (wrong.length > (right + wrong.length) / 2 ? 'wrong' : 'hard'),
+      upTo: session.upTo || undefined,
+      hardKeys: hardKeys.length ? hardKeys.slice().sort(compareKeys) : undefined,
+      hard: hardCount > 0 || undefined,
+      result: wrong.length === 0 ? (hardCount > 0 ? 'hard' : 'easy') : (wrong.length > (right + wrong.length) / 2 ? 'wrong' : 'hard'),
     };
     const next = Object.assign({}, list, { items, progress: null, lastReviewedAt: now, history: (list.history || []).concat([entry]) });
     next.n = next.history.length;
-    // A lista vence quando o primeiro exercício vencer (ou já, se sobrou exercício nunca feito).
-    const times = Object.keys(items).map((k) => items[k].nextReviewAt);
-    const untouched = listDue(next, now).all.some((k) => !items[k]);
-    next.nextReviewAt = untouched ? now : (times.length ? Math.min.apply(null, times) : now);
+    next.nextReviewAt = listNextAt(next, now);
     next.intervalDays = Math.max(1, calendarDayDiff(next.nextReviewAt, now));
     return next;
+  }
+
+  // Quando a lista vence: o MENOR vencimento entre os exercícios que contam hoje
+  // (dentro de "Quais revisar"), ou agora se sobrou exercício nunca feito.
+  // É calculado a partir dos exercícios, nunca copiado de um valor antigo: antes,
+  // exercícios fora do escopo (ou que não entraram na sessão de 10) com vencimento
+  // velho puxavam a lista para "Atrasada 11d" mesmo sem nada vencido ao abrir.
+  function listNextAt(list, now) {
+    now = now || Date.now();
+    const scope = listScope(list);
+    const items = listItems(list);
+    const keys = Object.keys(items).filter((k) => !scope || scope.includes(k));
+    if (!keys.length) return list.nextReviewAt || now; // nunca revisada
+    const d = listDue(list, now);
+    if (d.all.some((k) => !d.items[k])) return now; // ainda há exercício nunca feito
+    return Math.min.apply(null, keys.map((k) => items[k].nextReviewAt));
+  }
+
+  // ---------- GABARITO POR EXERCÍCIO ----------
+  // list.answers = { "1": "C", "3a": "12" }, mesma chave dos exercícios.
+  // Fica atrelado a "Quais revisar": o gabarito de um exercício fora do escopo não
+  // aparece (e não conta), mas continua guardado — se ele voltar ao escopo, o gabarito
+  // volta. Apagar um gabarito nunca tira o exercício da revisão.
+  function answerVisible(key, scope) {
+    if (!scope) return true;
+    if (scope.includes(key)) return true;
+    const num = keyNum(key);
+    if (/[a-z]$/i.test(key)) return scope.some((x) => !/[a-z]$/i.test(x) && keyNum(x) === num); // 3a com "3" inteiro no escopo
+    return scope.some((x) => keyNum(x) === num); // "3" com 3a/3b no escopo
+  }
+
+  function visibleAnswers(list) {
+    const scope = listScope(list);
+    const out = {};
+    Object.keys(list.answers || {}).forEach((k) => {
+      if (String(list.answers[k]).trim() && answerVisible(k, scope)) out[k] = list.answers[k];
+    });
+    return out;
+  }
+
+  // Lê "1: C; 2: 42; 3a: Falso; 3b: 0,5" (separador ";" ou quebra de linha).
+  function parseAnswers(text, max) {
+    const answers = {}, invalid = [];
+    String(text || '').split(/[;\n]+/).forEach((chunk) => {
+      if (!chunk.trim()) return;
+      const m = /^\s*(\d+)\s*[.)\-]?\s*([a-zA-Z])?\s*[:=]\s*([\s\S]*)$/.exec(chunk);
+      if (!m) { invalid.push(chunk.trim().slice(0, 20)); return; }
+      const n = parseInt(m[1], 10);
+      if (n < 1 || n > max) { invalid.push(m[1] + (m[2] || '')); return; }
+      const val = m[3].trim().slice(0, 200);
+      if (val) answers[n + (m[2] ? m[2].toLowerCase() : '')] = val;
+    });
+    return { answers, invalid };
+  }
+
+  function serializeAnswers(answers) {
+    return Object.keys(answers || {}).filter((k) => String(answers[k]).trim()).sort(compareKeys)
+      .map((k) => `${k}: ${answers[k]}`).join('; ');
   }
 
   // Round-robin entre matérias: a fila do dia mistura matérias em vez de
@@ -385,7 +462,7 @@
     now = now || Date.now();
     const due = (x) => x.subject === subject && x.nextReviewAt && x.nextReviewAt <= now;
     return {
-      lists: state.exerciseLists.filter(due).length,
+      lists: state.exerciseLists.filter((l) => l.subject === subject && listNextAt(l, now) <= now).length,
       questions: state.questionBank.filter((q) => !q.retired && due(q)).length,
     };
   }
@@ -402,7 +479,8 @@
   Object.assign(SC, {
     calculateAllocations, generateSequence, getDerived,
     GRADUATE_AFTER_N, sm2Step, applyQuestionRedo, applyListSession,
-    SESSION_MAX, parseExerciseKeys, listScope, listItems, listDue, keyLabel, compareKeys,
+    SESSION_MAX, parseExerciseKeys, listScope, listItems, listDue, listNextAt, keyLabel, compareKeys,
+    visibleAnswers, parseAnswers, serializeAnswers,
     interleaveBySubject, pendingReviews, calendarDayDiff, formatDate,
   });
 })();

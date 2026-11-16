@@ -2,6 +2,26 @@
 
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
+## [v22] — Gabarito por exercício, "acertei com dificuldade" e correção do "Atrasada 11d"
+
+### Corrigido
+- **"Atrasada 11d" logo depois de terminar a lista.** O vencimento da lista era o menor `nextReviewAt` entre *todos* os `items`, inclusive exercícios fora de "Quais revisar" ou que ficaram de fora da sessão de 10, com vencimento antigo. Ao abrir, a lista (que só olha o escopo) dizia que nada estava atrasado, mas o cartão mostrava o atraso. Agora `listNextAt(list)` (`logic.js`) calcula o vencimento só a partir dos exercícios que contam (escopo), ou "hoje" se sobrou exercício nunca feito; o cartão, a fila "Hoje", a ordenação e `pendingReviews` usam essa função, e listas antigas se corrigem sozinhas ao abrir.
+
+### Adicionado
+- **Gabarito por exercício** (`list.answers = { "1": "C", "3a": "12" }`). Preenche em "Editar lista" (`1: C; 2: 42; 3a: Falso`) ou direto na tela "Refazer lista", no bloco **Gabarito** (um campo por exercício, salva na hora sem fechar, + campo rápido para itens com letra).
+- **Atrelado a "Quais revisar"**: exercício fora do escopo não mostra (nem conta) o gabarito; ele continua guardado e volta se o exercício voltar ao escopo. Apagar um gabarito nunca tira o exercício da revisão. Funções: `visibleAnswers`, `parseAnswers`, `serializeAnswers`, `answerVisible`.
+- **"Acertou, mas com dificuldade?"**: campo com o mesmo formato de "Errou algum?" (`5; 9a; 12: b-c`). Tocar num exercício agora alterna: errou (vermelho) → com dificuldade (laranja) → tranquilo. Substitui o antigo botão geral "Nas que acertou, teve dificuldade?". `applyListSession` recebe `hardKeys[]`; `progress` guarda `hardKeys`.
+
+### Mudou — agendamento (`sm2Step`, vale para exercícios e questões)
+- Errou → **1 dia**. Acertou com dificuldade → **3 dias**. Acertou tranquilo → **5 dias** (na 1ª vez, ou depois de um erro).
+- Depois, o intervalo **cresce**: tranquilo ≈ ×2,1 (5, 11, 24, 54, 124…); com dificuldade ≈ ×1,25 (3, 4, 5, 6…), mínimo +1 dia. `EF` (1,3–2,8) sobe com acertos tranquilos e cai com dificuldade/erro, então o que é difícil *para você* espaça menos. Teto 365 dias.
+- A adaptação automática estilo FSRS (ajustar os intervalos pelo histórico) **não** foi implementada; o histórico já guarda o necessário (`history[]` e `items[k].lapses`).
+
+### Arquivos
+`js/logic.js`, `js/modals.js` (`exerciseList`, `listRedo`), `js/screens.js`, `css/styles.css`, `js/store.js` (comentário do modelo). Nenhum arquivo novo.
+
+---
+
 ## [v21.3] — Marcar erro não exige "Fiz até"
 
 - Removido o bloqueio "está depois de onde você parou". Marcar um exercício como errado (digitando ou tocando no chip) conta como feito até ele: se "Fiz até o exercício" estiver preenchido com número menor, ele sobe sozinho; vazio continua = lista toda.

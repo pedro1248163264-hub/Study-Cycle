@@ -267,6 +267,7 @@
           <p class="field-help">Vai direto para a nuvem (precisa de internet e da senha de sincronização) e não fica salvo no aparelho: abre em qualquer um, baixando só na hora de ver. Máx. ${MAX_PDF_MB} MB.</p>
         </div>
         ${inputField({ name: 'reviewPick', label: 'Quais revisar (opcional)', value: l ? l.reviewPick || '' : '', rows: 2, placeholder: 'ex: 1: a, c; 2; 3: b', help: 'Só estes exercícios entram na revisão. Número sozinho = o exercício inteiro; com letras = só aqueles itens. Separe com “;”. Vazio = a lista toda.' })}
+        ${inputField({ name: 'answersText', label: 'Gabarito (opcional)', value: l ? SC.serializeAnswers(l.answers) : '', rows: 3, placeholder: 'ex: 1: C; 2: 42; 3a: Falso; 3b: 0,5', help: 'Um por exercício, separados por “;”. Só aparece o gabarito dos exercícios de “Quais revisar” (os outros ficam guardados e voltam se você os incluir de novo). Você também pode ir preenchendo na hora de refazer a lista.' })}
         ${inputField({ name: 'notes', label: 'Observações (opcional)', value: l ? l.notes || '' : '', rows: 3, placeholder: 'Onde está a lista, página, link…' })}
         ${l ? '' : '<p class="field-help">A lista entra na fila de hoje. Depois de refazê-la, o app pergunta como foi e agenda a próxima vez.</p>'}
         ${formActions({ save: l ? 'Salvar alterações' : 'Adicionar lista' })}`,
@@ -296,9 +297,13 @@
         }
 
         form = bindForm({
-          validate: (v) => v.name.length > 0 && int(v.total) > 0,
+          validate(v) {
+            if (!(v.name.length > 0 && int(v.total) > 0)) return false;
+            const bad = SC.parseAnswers(v.answersText, int(v.total)).invalid;
+            return bad.length ? `Não entendi no gabarito: ${bad.join(', ')}. Use o formato “1: C; 3a: 12” (o exercício vai de 1 a ${int(v.total)}).` : true;
+          },
           onSave(v) {
-            const fields = { name: v.name, subject: v.subject, total: int(v.total), reviewPick: v.reviewPick, notes: v.notes };
+            const fields = { name: v.name, subject: v.subject, total: int(v.total), reviewPick: v.reviewPick, notes: v.notes, answers: SC.parseAnswers(v.answersText, int(v.total)).answers };
             const oldPath = l && l.pdf && l.pdf.path;
             const saveBtn = form.root.querySelector('[data-save]');
             const finish = (pdf) => commit(() => {
@@ -434,16 +439,30 @@
           </div>
           <p class="field-help" data-role="wrong-msg" role="alert" style="color:#E11D48;display:none"></p>
           <div class="list-wrong-chips" data-role="wrong-chips"></div>
-          <p class="field-help">O que você não marcar conta como certo.</p>
+          <p class="field-help">O que você não marcar conta como certo (tranquilo).</p>
         </div>
 
         <div class="redo-block field">
-          <label>Nas que acertou, teve dificuldade?</label>
-          <div class="seg" role="group">
-            <button type="button" class="seg-btn is-on" data-hard="0">Não, tranquilo</button>
-            <button type="button" class="seg-btn" data-hard="1">Sim, com dificuldade</button>
+          <label for="f-hard-num">Acertou, mas com dificuldade?</label>
+          <div class="list-score-add">
+            <input id="f-hard-num" class="text-input" type="text" autocomplete="off" placeholder="ex: 5; 9a; 12: b-c">
+            <button type="button" class="btn-chip btn-chip-hard" data-role="add-hard">Marcar</button>
           </div>
+          <p class="field-help" data-role="hard-msg" role="alert" style="color:#E11D48;display:none"></p>
+          <div class="list-wrong-chips" data-role="hard-chips"></div>
+          <p class="field-help">Errou = volta amanhã · com dificuldade = 3 dias · tranquilo (o que você não marcar) = 5 dias, e depois vai espaçando mais.</p>
         </div>
+
+        <details class="redo-more" data-role="gab">
+          <summary>Gabarito <span data-role="gab-count"></span></summary>
+          <div class="list-score-add">
+            <input id="f-gab-add" class="text-input" type="text" autocomplete="off" placeholder="ex: 1: C; 3a: 12; 3b: Falso">
+            <button type="button" class="btn-chip" data-role="gab-add">Salvar</button>
+          </div>
+          <p class="field-help" data-role="gab-msg" role="alert" style="color:#E11D48;display:none"></p>
+          <div class="gab-grid" data-role="gab-grid"></div>
+          <p class="field-help">Salva na hora, junto da lista. Só aparecem os exercícios de “Quais revisar”. Para um item com letra que não está aqui (ex.: 3b), use o campo de cima.</p>
+        </details>
 
         <details class="redo-more">
           <summary>Não fez tudo?</summary>
@@ -472,13 +491,15 @@
       wire() {
         const q = (sel) => document.querySelector(sel);
         const dueEl = q('[data-role="due"]'), chipsEl = q('[data-role="wrong-chips"]'), numEl = q('#f-wrong-num');
+        const hardEl = q('#f-hard-num'), hardMsg = q('[data-role="hard-msg"]'), hardChipsEl = q('[data-role="hard-chips"]');
         const wrongMsg = q('[data-role="wrong-msg"]'), progMsg = q('[data-role="progress-msg"]');
         const upEl = q('#f-upto'), sumEl = q('[data-role="summary"]');
         const total = l.total;
         const prog = l.progress || null;
         let wrong = prog ? (prog.wrong || []).map(String) : [];
-        let hard = !!(prog && prog.hard);
+        let hardKeys = prog ? (prog.hardKeys || []).map(String) : [];
         let expand = false;
+        const cur = () => col.find('exerciseLists', l.id) || l; // versão mais nova (o gabarito é salvo na hora)
         const say = (el, text) => { el.textContent = text || ''; el.style.display = text ? '' : 'none'; };
         const limit = () => { const u = parseInt(upEl.value, 10); return u >= 1 && u <= total ? u : total; };
         // Marcar uma questão como errada = você já fez tudo até ela: se "Fiz até" estiver
@@ -501,8 +522,8 @@
           const keys = d.fresh ? Array.from({ length: total }, (_, i) => String(i + 1)) : d.today;
           const lap = new Set(d.lapsed);
           const chip = (k) => {
-            const on = wrong.includes(k);
-            return `<button type="button" class="due-chip${lap.has(k) ? ' is-lapsed' : ''}${on ? ' is-wrong' : ''}${parseInt(k, 10) > limit() ? ' is-later' : ''}" data-k="${esc(k)}" aria-pressed="${on}">${esc(SC.keyLabel(k, d.items))}</button>`;
+            const on = wrong.includes(k), hd = hardKeys.includes(k);
+            return `<button type="button" class="due-chip${lap.has(k) ? ' is-lapsed' : ''}${on ? ' is-wrong' : ''}${hd ? ' is-hard' : ''}${parseInt(k, 10) > limit() ? ' is-later' : ''}" data-k="${esc(k)}" aria-pressed="${on || hd}" aria-label="${esc(SC.keyLabel(k, d.items))}${on ? ' (errado)' : hd ? ' (com dificuldade)' : ''}">${esc(SC.keyLabel(k, d.items))}</button>`;
           };
           const head = d.first
             ? (d.scope
@@ -513,7 +534,7 @@
           dueEl.innerHTML = `
             ${head}
             <div class="due-chips">${keys.map(chip).join('')}</div>
-            ${keys.length ? '<p class="field-help">Toque no exercício que você errou para marcar (toque de novo para desmarcar).</p>' : ''}
+            ${keys.length ? '<p class="field-help">Toque no exercício: 1× = errou (vermelho), 2× = acertou com dificuldade (laranja), 3× = tranquilo.</p>' : ''}
             ${d.lapsed.length ? '<p class="field-help"><span class="legend-dot"></span>Em vermelho claro: você errou na última vez.</p>' : ''}
             ${hidden > 0 ? `<button type="button" class="btn-chip" data-role="more">+ ${hidden} que também venceram</button>` : ''}`;
           const more = dueEl.querySelector('[data-role="more"]');
@@ -525,7 +546,9 @@
           const b = e.target.closest('.due-chip');
           if (!b) return;
           const k = b.dataset.k;
-          if (wrong.includes(k)) wrong = wrong.filter((x) => x !== k);
+          // tranquilo -> errou -> com dificuldade -> tranquilo
+          if (wrong.includes(k)) { wrong = wrong.filter((x) => x !== k); hardKeys.push(k); hardKeys.sort(SC.compareKeys); }
+          else if (hardKeys.includes(k)) hardKeys = hardKeys.filter((x) => x !== k);
           else { wrong.push(k); wrong.sort(SC.compareKeys); raiseUpTo([k]); }
           paint();
         });
@@ -534,14 +557,18 @@
           paintDue();
           chipsEl.innerHTML = wrong.map((k) =>
             `<button type="button" class="wrong-chip" data-k="${k}" aria-label="Desmarcar ${k}">${esc(k)}${icon('x', true)}</button>`).join('');
+          hardChipsEl.innerHTML = hardKeys.map((k) =>
+            `<button type="button" class="wrong-chip hard-chip" data-k="${k}" aria-label="Desmarcar ${k}">${esc(k)}${icon('x', true)}</button>`).join('');
           const keys = sessionKeys();
           const right = keys.filter((k) => !wrong.includes(k)).length;
-          sumEl.textContent = keys.length ? `${right} certas · ${wrong.length} ${wrong.length === 1 ? 'errada' : 'erradas'}` : '';
+          sumEl.textContent = keys.length
+            ? `${right} certas${hardKeys.length ? ` (${hardKeys.length} com dificuldade)` : ''} · ${wrong.length} ${wrong.length === 1 ? 'errada' : 'erradas'}` : '';
         }
 
-        function add() {
-          say(wrongMsg, '');
-          const r = SC.parseExerciseKeys(numEl.value, total);
+        // Lê o texto digitado (respeitando “Quais revisar”) e devolve as chaves válidas.
+        function parseInput(text, msgEl) {
+          say(msgEl, '');
+          const r = SC.parseExerciseKeys(text, total);
           const scope = SC.listScope(l);
           if (scope) { // número sozinho = todos os itens daquele número no escopo
             const out = [];
@@ -552,15 +579,88 @@
             });
             r.keys = out;
           }
-          r.keys.forEach((k) => { if (!wrong.includes(k)) wrong.push(k); });
+          if (!r.keys.length && !r.invalid.length) say(msgEl, 'Digite o número (e a letra, se tiver): 3; 7; 23a; 23: a-b.');
+          else if (r.invalid.length) say(msgEl, scope ? `Fora de “Quais revisar”: ${r.invalid.join(', ')}.` : `Não entendi: ${r.invalid.join(', ')}. A lista vai de 1 a ${total}.`);
+          return r;
+        }
+
+        function add() {
+          const r = parseInput(numEl.value, wrongMsg);
+          r.keys.forEach((k) => {
+            if (!wrong.includes(k)) wrong.push(k);
+            hardKeys = hardKeys.filter((x) => x !== k); // errado e “com dificuldade” ao mesmo tempo não existe
+          });
           wrong.sort(SC.compareKeys);
           raiseUpTo(r.keys);
-          const bad = r.invalid;
-          numEl.value = bad.join(', ');
-          if (!r.keys.length && !bad.length) say(wrongMsg, 'Digite o número (e a letra, se tiver): 3, 7, 23a, 23: a-b.');
-          else if (r.invalid.length) say(wrongMsg, scope ? `Fora de “Quais revisar”: ${r.invalid.join(', ')}.` : `Não entendi: ${r.invalid.join(', ')}. A lista vai de 1 a ${total}.`);
+          numEl.value = r.invalid.join(', ');
           paint();
           numEl.focus();
+        }
+
+        function addHard() {
+          const r = parseInput(hardEl.value, hardMsg);
+          r.keys.forEach((k) => {
+            wrong = wrong.filter((x) => x !== k);
+            if (!hardKeys.includes(k)) hardKeys.push(k);
+          });
+          hardKeys.sort(SC.compareKeys);
+          raiseUpTo(r.keys);
+          hardEl.value = r.invalid.join(', ');
+          paint();
+          hardEl.focus();
+        }
+
+        q('[data-role="add-hard"]').addEventListener('click', addHard);
+        hardEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addHard(); } });
+        hardChipsEl.addEventListener('click', (e) => {
+          const b = e.target.closest('.hard-chip');
+          if (!b) return;
+          hardKeys = hardKeys.filter((k) => k !== b.dataset.k);
+          paint();
+        });
+
+        // ----- Gabarito: preenchido enquanto você faz a lista (salva na hora, sem fechar) -----
+        const gabGrid = q('[data-role="gab-grid"]'), gabMsg = q('[data-role="gab-msg"]'), gabAdd = q('#f-gab-add'), gabCount = q('[data-role="gab-count"]');
+        const saveAnswers = (answers) => { col.patch('exerciseLists', l.id, { answers }); SC.saveState(); };
+        function paintGab() {
+          const list = cur();
+          const vis = SC.visibleAnswers(list);
+          const scope = SC.listScope(list);
+          const base = scope || (total <= 120 ? Array.from({ length: total }, (_, i) => String(i + 1)) : []);
+          const keys = Array.from(new Set(base.concat(Object.keys(vis)))).sort(SC.compareKeys);
+          const n = Object.keys(vis).length;
+          gabCount.textContent = n ? `(${n} preenchido${n === 1 ? '' : 's'})` : '';
+          gabGrid.innerHTML = keys.map((k) => `
+            <label class="gab-row"><span>${esc(k)}</span>
+              <input class="text-input" type="text" data-k="${esc(k)}" maxlength="200" autocomplete="off" value="${esc(vis[k] || '')}"></label>`).join('');
+        }
+        gabGrid.addEventListener('change', (e) => {
+          const inp = e.target.closest('input[data-k]');
+          if (!inp) return;
+          const answers = Object.assign({}, cur().answers || {});
+          const v = inp.value.trim();
+          if (v) answers[inp.dataset.k] = v; else delete answers[inp.dataset.k];
+          saveAnswers(answers);
+          const n = Object.keys(SC.visibleAnswers(cur())).length;
+          gabCount.textContent = n ? `(${n} preenchido${n === 1 ? '' : 's'})` : '';
+        });
+        function addGab() {
+          const r = SC.parseAnswers(gabAdd.value, total);
+          if (r.invalid.length) { say(gabMsg, `Não entendi: ${r.invalid.join(', ')}. Use “1: C; 3a: 12” (exercícios de 1 a ${total}).`); return; }
+          if (!Object.keys(r.answers).length) { say(gabMsg, 'Digite no formato “1: C; 3a: 12”.'); return; }
+          saveAnswers(Object.assign({}, cur().answers || {}, r.answers));
+          const hidden = Object.keys(r.answers).filter((k) => !SC.visibleAnswers(cur())[k]);
+          say(gabMsg, hidden.length ? `Guardado, mas não aparece agora (fora de “Quais revisar”): ${hidden.join(', ')}.` : '');
+          gabAdd.value = '';
+          paintGab();
+          gabAdd.focus();
+        }
+        q('[data-role="gab-add"]').addEventListener('click', addGab);
+        gabAdd.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addGab(); } });
+        paintGab();
+        {
+          const g = q('[data-role="gab"]');
+          if (g && Object.keys(SC.visibleAnswers(cur())).length === 0) g.open = true; // sem gabarito ainda: já abre para você preencher
         }
 
         q('[data-role="add-wrong"]').addEventListener('click', add);
@@ -571,14 +671,10 @@
           wrong = wrong.filter((k) => k !== b.dataset.k);
           paint();
         });
-        document.querySelectorAll('.seg-btn').forEach((b) => b.addEventListener('click', () => {
-          hard = b.dataset.hard === '1';
-          document.querySelectorAll('.seg-btn').forEach((x) => x.classList.toggle('is-on', x === b));
-        }));
-        document.querySelectorAll('.seg-btn').forEach((x) => x.classList.toggle('is-on', (x.dataset.hard === '1') === hard));
         upEl.addEventListener('change', () => {
           if (upEl.value !== '') upEl.value = limit();
           wrong = wrong.filter((k) => parseInt(k, 10) <= limit());
+          hardKeys = hardKeys.filter((k) => parseInt(k, 10) <= limit());
           paint();
         });
 
@@ -586,19 +682,18 @@
           const upTo = parseInt(upEl.value, 10);
           if (!(upTo >= 1 && upTo <= total)) { say(progMsg, `Preencha “Fiz até o exercício” (de 1 a ${total}).`); upEl.focus(); return; }
           say(progMsg, '');
-          commit(() => col.patch('exerciseLists', l.id, { progress: { upTo, wrong: wrong.slice(), hard, at: Date.now() } }));
+          commit(() => col.patch('exerciseLists', l.id, { progress: { upTo, wrong: wrong.slice(), hardKeys: hardKeys.slice(), at: Date.now() } }));
         });
 
         q('[data-role="finish"]').addEventListener('click', () => {
           const keys = sessionKeys();
           if (!keys.length && !wrong.length) { say(wrongMsg, 'Não há exercícios nesta sessão.'); return; }
           const upTo = parseInt(upEl.value, 10);
-          commit(() => col.put('exerciseLists', SC.applyListSession(l, {
-            keys, wrong: wrong.slice(), hard, upTo: upTo >= 1 && upTo < total ? upTo : null,
+          commit(() => col.put('exerciseLists', SC.applyListSession(cur(), {
+            keys, wrong: wrong.slice(), hardKeys: hardKeys.slice(), upTo: upTo >= 1 && upTo < total ? upTo : null,
           })));
         });
 
-        if (prog && prog.hard !== undefined) hard = !!prog.hard;
         paint();
 
         // PDF da lista ao lado (telas largas) ou recolhido (celular); só baixa quando aberto.
