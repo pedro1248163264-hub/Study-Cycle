@@ -1697,6 +1697,7 @@ html.dark .wrong-chip { background-color: rgba(159, 18, 57, 0.25); border-color:
 .due-chip {
   padding: 0.25rem 0.625rem; font-size: 0.8125rem; font-weight: 600;
   border-radius: 9999px; border: 1px solid var(--border); background-color: var(--muted);
+  font-family: inherit; color: inherit; cursor: pointer; line-height: inherit;
 }
 .due-chip.is-lapsed { border-color: #FDA4AF; background-color: #FFF1F2; color: #BE123C; }
 html.dark .due-chip.is-lapsed { background-color: rgba(159, 18, 57, 0.25); border-color: rgba(251, 113, 133, 0.5); color: #FDA4AF; }
@@ -1715,3 +1716,20 @@ html.dark .due-chip.is-lapsed { background-color: rgba(159, 18, 57, 0.25); borde
 .redo-footer { margin-top: 1.5rem; display: flex; flex-direction: column; gap: 0.625rem; }
 .redo-summary { text-align: center; font-size: 0.875rem; color: var(--muted-foreground, #64748B); margin: 0; }
 .redo-summary:empty { display: none; }
+
+/* Refazer lista (v21.2): chips tocáveis + PDF da lista dentro do modal */
+.due-chip.is-wrong { border-color: #E11D48; background-color: #E11D48; color: #fff; }
+html.dark .due-chip.is-wrong { border-color: #FB7185; background-color: #BE123C; color: #fff; }
+.due-chip:focus-visible { outline: 2px solid var(--primary, #4F46E5); outline-offset: 2px; }
+.modal.modal-xl { max-width: 76rem; }
+.redo-layout { display: block; }
+.redo-pdf { margin-top: 1.25rem; border-top: 1px solid var(--border); padding-top: 0.75rem; }
+.redo-pdf summary { cursor: pointer; font-size: 0.875rem; font-weight: 600; }
+.redo-pdf[open] summary { margin-bottom: 0.75rem; }
+.redo-pdf .pdf-frame { height: 70vh; }
+@media (min-width: 60rem) {
+  .redo-layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+  .redo-layout .redo-pdf { order: -1; margin-top: 0; border-top: 0; padding-top: 0; position: sticky; top: 4.5rem; }
+  .redo-layout .redo-pdf .pdf-frame { height: calc(100vh - 13rem); }
+}
+.due-chip.is-later { opacity: 0.5; }

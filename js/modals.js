@@ -341,6 +341,49 @@
   // nada fica salvo no aparelho (a menos que você toque em "Baixar").
   let pdfUrl = null;
   const dropPdf = () => { if (pdfUrl) { URL.revokeObjectURL(pdfUrl); pdfUrl = null; } };
+  // Baixa o PDF da lista e mostra dentro de `box` (usado em "Ver PDF" e dentro de "Refazer lista").
+  function mountListPdf(box, l) {
+    const alive = () => document.body.contains(box);
+    dropPdf();
+    // Quando o modal fecha (ou troca), joga fora o PDF da memória.
+    const watch = setInterval(() => { if (!alive()) { clearInterval(watch); setTimeout(dropPdf, 30000); } }, 1000);
+
+    function show(blob) {
+      if (!alive()) return;
+      dropPdf();
+      pdfUrl = URL.createObjectURL(blob);
+      // Celular: o visualizador embutido às vezes mostra só a 1ª página — por isso os links.
+      box.innerHTML = `
+        <iframe class="pdf-frame" src="${pdfUrl}" title="${esc(l.name)}"></iframe>
+        <div class="ocr-row">
+          <a class="btn-chip" href="${pdfUrl}" target="_blank" rel="noopener">${icon('eye', true)}Abrir em outra aba</a>
+          <a class="btn-chip" href="${pdfUrl}" download="${esc(l.pdf.name || 'lista.pdf')}">Baixar</a>
+        </div>`;
+    }
+
+    function fail(msg, retry) {
+      if (!alive()) return;
+      box.innerHTML = `<p class="field-help">${esc(msg)}</p>${retry ? `<button type="button" class="btn-chip" data-role="retry">${icon('refreshCw', true)}Tentar de novo</button>` : ''}`;
+      const b = box.querySelector('[data-role="retry"]');
+      if (b) b.addEventListener('click', load);
+    }
+
+    function load() {
+      box.innerHTML = '<p class="field-help">Baixando da nuvem…</p>';
+      if (l.pdf.path) {
+        SC.cloud.download(l.pdf.path).then(show)
+          .catch((err) => fail('Não consegui abrir o PDF: ' + ((err && err.message) || 'erro de conexão'), true));
+        return;
+      }
+      // Lista antiga, com PDF só neste aparelho: mostra, e a próxima sincronização o envia e apaga a cópia.
+      SC.files.get(l.id).then((rec) => {
+        if (rec) show(new Blob([rec.data], { type: 'application/pdf' }));
+        else fail(`O PDF “${l.pdf.name}” não foi enviado para a nuvem e não está neste aparelho. Abra a lista no aparelho onde você o anexou e sincronize (⟳), ou anexe de novo em Editar.`);
+      });
+    }
+    load();
+  }
+
   SC.modals.listPdf = (m) => {
     const l = col.find('exerciseLists', m.id);
     if (!l || !l.pdf) return null;
@@ -350,48 +393,7 @@
       body: `
         <div data-pdf-box><p class="field-help">Carregando PDF…</p></div>
         ${m.back ? `<div class="modal-form-actions"><button type="button" class="btn-secondary-block" data-action="modal" data-modal="listRedo" data-id="${l.id}">Voltar para a avaliação</button></div>` : ''}`,
-      wire() {
-        const box = document.querySelector('[data-pdf-box]');
-        const alive = () => document.body.contains(box);
-        dropPdf();
-        // Quando o modal fecha (ou troca), joga fora o PDF da memória.
-        const watch = setInterval(() => { if (!alive()) { clearInterval(watch); setTimeout(dropPdf, 30000); } }, 1000);
-
-        function show(blob) {
-          if (!alive()) return;
-          dropPdf();
-          pdfUrl = URL.createObjectURL(blob);
-          // Celular: o visualizador embutido às vezes mostra só a 1ª página — por isso os links.
-          box.innerHTML = `
-            <iframe class="pdf-frame" src="${pdfUrl}" title="${esc(l.name)}"></iframe>
-            <div class="ocr-row">
-              <a class="btn-chip" href="${pdfUrl}" target="_blank" rel="noopener">${icon('eye', true)}Abrir em outra aba</a>
-              <a class="btn-chip" href="${pdfUrl}" download="${esc(l.pdf.name || 'lista.pdf')}">Baixar</a>
-            </div>`;
-        }
-
-        function fail(msg, retry) {
-          if (!alive()) return;
-          box.innerHTML = `<p class="field-help">${esc(msg)}</p>${retry ? `<button type="button" class="btn-chip" data-role="retry">${icon('refreshCw', true)}Tentar de novo</button>` : ''}`;
-          const b = box.querySelector('[data-role="retry"]');
-          if (b) b.addEventListener('click', load);
-        }
-
-        function load() {
-          box.innerHTML = '<p class="field-help">Baixando da nuvem…</p>';
-          if (l.pdf.path) {
-            SC.cloud.download(l.pdf.path).then(show)
-              .catch((err) => fail('Não consegui abrir o PDF: ' + ((err && err.message) || 'erro de conexão'), true));
-            return;
-          }
-          // Lista antiga, com PDF só neste aparelho: mostra, e a próxima sincronização o envia e apaga a cópia.
-          SC.files.get(l.id).then((rec) => {
-            if (rec) show(new Blob([rec.data], { type: 'application/pdf' }));
-            else fail(`O PDF “${l.pdf.name}” não foi enviado para a nuvem e não está neste aparelho. Abra a lista no aparelho onde você o anexou e sincronize (⟳), ou anexe de novo em Editar.`);
-          });
-        }
-        load();
-      },
+      wire() { mountListPdf(document.querySelector('[data-pdf-box]'), l); },
     };
   };
 
@@ -409,7 +411,10 @@
     const notes = [l.notes ? `<p class="field-help">${esc(l.notes)}</p>` : ''].join('');
     return {
       title: 'Refazer lista',
+      wide: l.pdf ? 'xl' : false,
       body: `
+        <div class="${l.pdf ? 'redo-layout' : ''}">
+        <div class="redo-main">
         <div class="redo-head">
           <p class="redo-name">${esc(l.name)}</p>
           <p class="field-help">${esc([l.subject, SC.listScope(l) ? `${SC.listScope(l).length} em “Quais revisar”` : plural(l.total, 'exercício', 'exercícios'), `revisão nº ${(l.history || []).length + 1}`].filter(Boolean).join(' · '))}</p>
@@ -445,19 +450,24 @@
           <div class="field">
             <label for="f-upto">Fiz até o exercício</label>
             <input id="f-upto" name="upto" class="text-input" type="number" inputmode="numeric" min="1" max="${l.total}" placeholder="vazio = tudo acima" value="${l.progress ? l.progress.upTo : ''}">
-            <p class="field-help">“Concluir” avalia só até aí; o resto continua pendente.</p>
+            <p class="field-help">“Concluir” avalia só até aí; o resto continua pendente. Marcar um exercício como errado já conta como feito até ele.</p>
           </div>
           <button type="button" class="btn-chip" data-role="save-progress">${icon('check', true)}Salvar e continuar depois</button>
           <p class="field-help" data-role="progress-msg" role="alert" style="color:#E11D48;display:none"></p>
         </details>
 
         ${notes ? `<details class="redo-more"><summary>Anotações da lista</summary>${notes}</details>` : ''}
-        ${l.pdf ? `<button type="button" class="btn-chip" data-action="modal" data-modal="listPdf" data-id="${l.id}" data-back="1" style="margin-top:0.75rem">${icon('eye', true)}Ver PDF da lista</button>` : ''}
 
         <div class="redo-footer">
           <p class="redo-summary" data-role="summary"></p>
           <button type="button" class="btn-primary-block" data-role="finish">Concluir revisão</button>
           <button type="button" class="btn-secondary-block" data-action="close-modal">Cancelar</button>
+        </div>
+        </div>
+        ${l.pdf ? `<details class="redo-pdf" data-role="pdf">
+          <summary>${icon('eye', true)}Ver a lista (PDF)</summary>
+          <div data-pdf-box><p class="field-help">Carregando PDF…</p></div>
+        </details>` : ''}
         </div>`,
       wire() {
         const q = (sel) => document.querySelector(sel);
@@ -471,6 +481,13 @@
         let expand = false;
         const say = (el, text) => { el.textContent = text || ''; el.style.display = text ? '' : 'none'; };
         const limit = () => { const u = parseInt(upEl.value, 10); return u >= 1 && u <= total ? u : total; };
+        // Marcar uma questão como errada = você já fez tudo até ela: se "Fiz até" estiver
+        // preenchido com um número menor, ele sobe sozinho (vazio = lista toda, nada a mudar).
+        const raiseUpTo = (keys) => {
+          if (upEl.value === '') return;
+          const top = Math.max.apply(null, keys.map((k) => parseInt(k, 10)).concat([0]));
+          if (top > limit()) upEl.value = top;
+        };
         const due = () => SC.listDue(l, Date.now(), expand);
         // exercícios que esta sessão cobre (respeitando "fiz até")
         const sessionKeys = () => {
@@ -481,25 +498,40 @@
 
         function paintDue() {
           const d = due();
-          if (d.first) {
-            dueEl.innerHTML = d.scope
-              ? `<p class="redo-fresh">Primeira vez: os ${d.scope.length} itens de “Quais revisar”</p>`
-              : `<p class="redo-fresh">Primeira vez: a lista toda <span>(1 a ${total})</span></p>`;
-            return;
-          }
+          const keys = d.fresh ? Array.from({ length: total }, (_, i) => String(i + 1)) : d.today;
           const lap = new Set(d.lapsed);
-          const chip = (k) => `<span class="due-chip${lap.has(k) ? ' is-lapsed' : ''}">${esc(SC.keyLabel(k, d.items))}</span>`;
-          const hidden = d.all.length - d.today.length;
+          const chip = (k) => {
+            const on = wrong.includes(k);
+            return `<button type="button" class="due-chip${lap.has(k) ? ' is-lapsed' : ''}${on ? ' is-wrong' : ''}${parseInt(k, 10) > limit() ? ' is-later' : ''}" data-k="${esc(k)}" aria-pressed="${on}">${esc(SC.keyLabel(k, d.items))}</button>`;
+          };
+          const head = d.first
+            ? (d.scope
+              ? `<p class="redo-fresh">Primeira vez: os ${d.scope.length} itens de “Quais revisar”</p>`
+              : `<p class="redo-fresh">Primeira vez: a lista toda <span>(1 a ${limit()})</span></p>`)
+            : (d.early ? '<p class="field-help">Nada venceu ainda. Estes são os próximos a vencer.</p>' : '');
+          const hidden = d.first ? 0 : d.all.length - d.today.length;
           dueEl.innerHTML = `
-            ${d.early ? '<p class="field-help">Nada venceu ainda. Estes são os próximos a vencer.</p>' : ''}
-            <div class="due-chips">${d.today.map(chip).join('')}</div>
-            ${d.lapsed.length ? '<p class="field-help"><span class="legend-dot"></span>Em vermelho: você errou na última vez.</p>' : ''}
+            ${head}
+            <div class="due-chips">${keys.map(chip).join('')}</div>
+            ${keys.length ? '<p class="field-help">Toque no exercício que você errou para marcar (toque de novo para desmarcar).</p>' : ''}
+            ${d.lapsed.length ? '<p class="field-help"><span class="legend-dot"></span>Em vermelho claro: você errou na última vez.</p>' : ''}
             ${hidden > 0 ? `<button type="button" class="btn-chip" data-role="more">+ ${hidden} que também venceram</button>` : ''}`;
           const more = dueEl.querySelector('[data-role="more"]');
-          if (more) more.addEventListener('click', () => { expand = true; paintDue(); paint(); });
+          if (more) more.addEventListener('click', () => { expand = true; paint(); });
         }
 
+        // Tocar num exercício de "Fazer agora" marca/desmarca como errado.
+        dueEl.addEventListener('click', (e) => {
+          const b = e.target.closest('.due-chip');
+          if (!b) return;
+          const k = b.dataset.k;
+          if (wrong.includes(k)) wrong = wrong.filter((x) => x !== k);
+          else { wrong.push(k); wrong.sort(SC.compareKeys); raiseUpTo([k]); }
+          paint();
+        });
+
         function paint() {
+          paintDue();
           chipsEl.innerHTML = wrong.map((k) =>
             `<button type="button" class="wrong-chip" data-k="${k}" aria-label="Desmarcar ${k}">${esc(k)}${icon('x', true)}</button>`).join('');
           const keys = sessionKeys();
@@ -520,14 +552,12 @@
             });
             r.keys = out;
           }
-          const max = limit();
-          const late = r.keys.filter((k) => parseInt(k, 10) > max);
-          r.keys.filter((k) => parseInt(k, 10) <= max).forEach((k) => { if (!wrong.includes(k)) wrong.push(k); });
+          r.keys.forEach((k) => { if (!wrong.includes(k)) wrong.push(k); });
           wrong.sort(SC.compareKeys);
-          const bad = r.invalid.concat(late);
+          raiseUpTo(r.keys);
+          const bad = r.invalid;
           numEl.value = bad.join(', ');
           if (!r.keys.length && !bad.length) say(wrongMsg, 'Digite o número (e a letra, se tiver): 3, 7, 23a, 23: a-b.');
-          else if (late.length) say(wrongMsg, `${late.join(', ')} está depois de onde você parou (${max}).`);
           else if (r.invalid.length) say(wrongMsg, scope ? `Fora de “Quais revisar”: ${r.invalid.join(', ')}.` : `Não entendi: ${r.invalid.join(', ')}. A lista vai de 1 a ${total}.`);
           paint();
           numEl.focus();
@@ -569,8 +599,21 @@
         });
 
         if (prog && prog.hard !== undefined) hard = !!prog.hard;
-        paintDue();
         paint();
+
+        // PDF da lista ao lado (telas largas) ou recolhido (celular); só baixa quando aberto.
+        const pdfBox = q('[data-role="pdf"]');
+        if (pdfBox) {
+          let loaded = false;
+          const loadPdf = () => {
+            if (loaded || !pdfBox.open) return;
+            loaded = true;
+            mountListPdf(pdfBox.querySelector('[data-pdf-box]'), l);
+          };
+          pdfBox.open = window.matchMedia('(min-width: 60rem)').matches;
+          pdfBox.addEventListener('toggle', loadPdf);
+          loadPdf();
+        }
       },
     };
   };

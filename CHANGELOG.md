@@ -2,6 +2,23 @@
 
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
+## [v21.3] — Marcar erro não exige "Fiz até"
+
+- Removido o bloqueio "está depois de onde você parou". Marcar um exercício como errado (digitando ou tocando no chip) conta como feito até ele: se "Fiz até o exercício" estiver preenchido com número menor, ele sobe sozinho; vazio continua = lista toda.
+- Com progresso salvo, os exercícios depois de "Fiz até" agora aparecem em "Fazer agora" esmaecidos (antes sumiam), e tocar neles marca e atualiza o "Fiz até".
+- Arquivos: `js/modals.js` (`listRedo`), `css/styles.css`.
+
+---
+
+## [v21.2] — Refazer lista: ordem numérica, PDF dentro do modal e marcar por toque
+
+- **"Fazer agora" em ordem**: os exercícios aparecem em ordem numérica e, no mesmo número, alfabética (`1a, 2c, 7, 9, 11b, 11c, 12f, 26e`). A escolha de *quais* entram na sessão continua por prioridade (errados primeiro); só a exibição é ordenada (`listDue` em `logic.js`).
+- **Marcar por toque**: cada exercício de "Fazer agora" virou botão; tocar marca como errado (vermelho forte), tocar de novo desmarca. Sincroniza com o campo "Errou algum?" e com os chips de erradas. Na 1ª vez, os exercícios também aparecem como botões.
+- **PDF dentro do modal**: se a lista tem PDF, "Refazer lista" mostra o PDF ao lado dos controles (telas largas, ≥ 60rem, painel fixo) ou numa seção recolhível (celular; só baixa quando aberta). O botão "Ver PDF da lista" saiu do modal de refazer; "Ver PDF" no cartão continua.
+- Arquivos: `js/logic.js`, `js/modals.js` (`mountListPdf` extraída de `listPdf`, `listRedo`), `js/ui.js` (`wide: 'xl'`), `css/styles.css`.
+
+---
+
 ## [v21.1] — "Quais revisar" delimita a revisão
 
 - Se a lista tem "Quais revisar" (ex.: `1: a; 2: c; 3; 11: b, c`), **só esses exercícios** entram na revisão; o resto da lista é ignorado. Número sozinho = exercício inteiro; com letras = só aqueles itens. Vazio, ou texto livre com palavras (ex.: "26 toda"), = lista toda.

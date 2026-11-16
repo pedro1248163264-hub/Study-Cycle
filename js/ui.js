@@ -264,7 +264,7 @@
   const modalShell = (title, body, wide) => `
     <div class="modal-overlay">
       <div class="modal-backdrop" data-action="close-modal"></div>
-      <div class="modal${wide ? ' modal-wide' : ''}" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+      <div class="modal${wide ? ' modal-wide' : ''}${wide === 'xl' ? ' modal-xl' : ''}" role="dialog" aria-modal="true" aria-label="${esc(title)}">
         <div class="modal-header">
           <h2>${esc(title)}</h2>
           <button type="button" class="modal-close" data-action="close-modal" aria-label="Fechar">${icon('x')}</button>

@@ -306,7 +306,9 @@
     if (early) keys.sort((a, b) => items[a].nextReviewAt - items[b].nextReviewAt || compareKeys(a, b)).forEach((k) => all.push(k));
     const lapsed = all.filter((k) => items[k] && items[k].n === 0 && items[k].nextReviewAt <= now);
     // Na 1ª vez faz tudo; depois, limita para não acumular.
-    const today = (expand || first) ? all : all.slice(0, Math.max(SESSION_MAX, lapsed.length));
+    // A seleção segue a prioridade (errados primeiro), mas a exibição fica em ordem
+    // numérica e, dentro do mesmo número, alfabética: 1, 1a, 2c, 11b, 11c, 26e…
+    const today = ((expand || first) ? all : all.slice(0, Math.max(SESSION_MAX, lapsed.length))).slice().sort(compareKeys);
     return { fresh, first, early, scope, all, lapsed, today, items };
   }
 
