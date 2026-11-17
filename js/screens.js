@@ -291,7 +291,10 @@
     const lastText = last ? `última vez (${formatDate(l.lastReviewedAt)})${scoreText(last)}` : 'ainda não revisada';
     const d = SC.listDue(l);
     const nAns = Object.keys(SC.visibleAnswers(l)).length;
-    const todo = !last || d.early ? '' : (d.all.length ? `${plural(d.all.length, 'exercício', 'exercícios')} para refazer` : '');
+    const todo = !last || d.early || !d.all.length ? ''
+      : (d.today.length < d.all.length
+        ? (d.today.length ? `${d.today.length} hoje (${d.all.length} vencidos, limite ${d.limit}/dia)` : `${d.all.length} vencidos · limite de hoje já feito`)
+        : `${plural(d.all.length, 'exercício', 'exercícios')} para refazer`);
     return logCard({
       main: cardMain({
         meta,

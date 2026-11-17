@@ -2,6 +2,21 @@
 
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
+## [v22.2] — Limite diário por lista, espalhamento e teto de 6 meses
+
+### Adicionado
+- **Limite diário por lista** (`list.dailyLimit`, campo "Limite por dia" em Editar lista; vazio = 10). Conta o que já foi revisado hoje naquela lista; o excedente fica para os dias seguintes, errados primeiro. Atingido o limite, a lista sai da fila de hoje (`listNextAt` devolve amanhã) e o modal avisa, com botão "Fazer também os N que sobraram" para quem quiser passar do limite. Na 1ª vez a lista toda continua sendo feita. `listDue` agora devolve `limit`, `doneToday` e `quota`.
+- **Espalhamento** (`spreadDays`, usado em `applyListSession`): para intervalos de 4 dias ou mais, o app escolhe, dentro de ±15% do intervalo (5 dias => 4 a 6), o dia com menos exercícios da lista já agendados. Erro (1 dia) e difícil (3 dias) não mudam.
+
+### Mudou
+- **Teto de intervalo: 365 → 180 dias** (`MAX_INTERVAL_DAYS`), vale para exercícios e questões.
+- Teste simulado de 90 dias (lista de 26, tudo tranquilo): no máximo 7 exercícios num dia, contra 26 empilhados antes.
+
+### Arquivos
+`js/logic.js`, `js/modals.js` (`exerciseList`, `listRedo`), `js/screens.js` (`listCard`), `README.md`.
+
+---
+
 ## [v22.1] — Listas antigas: fim do "refazer tudo" e do "daqui a 2 anos"
 
 ### Corrigido

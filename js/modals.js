@@ -261,6 +261,7 @@
         ${inputField({ name: 'name', label: 'Nome da lista', value: l ? l.name : '', placeholder: 'ex: Lista 3 — Cinemática', bold: true })}
         ${subjectField({ label: 'Matéria (opcional)', value: l ? l.subject || '' : '', none: 'Sem matéria' })}
         ${inputField({ name: 'total', label: 'Quantos exercícios a lista tem', type: 'number', value: l ? l.total : '', placeholder: 'ex: 30', attrs: 'min="1"' })}
+        ${inputField({ name: 'dailyLimit', label: 'Limite por dia (opcional)', type: 'number', value: l && l.dailyLimit ? l.dailyLimit : '', placeholder: 'padrão: ' + SC.SESSION_MAX, attrs: 'min="1"', help: 'Quantos exercícios desta lista aparecem por dia na revisão. O que passar disso fica para os próximos dias (os errados vêm primeiro).' })}
         <div class="field">
           <label>PDF da lista (opcional)</label>
           <div data-pdf-area></div>
@@ -303,7 +304,7 @@
             return bad.length ? `Não entendi no gabarito: ${bad.join(', ')}. Use o formato “1: C; 3a: 12” (o exercício vai de 1 a ${int(v.total)}).` : true;
           },
           onSave(v) {
-            const fields = { name: v.name, subject: v.subject, total: int(v.total), reviewPick: v.reviewPick, notes: v.notes, answers: SC.parseAnswers(v.answersText, int(v.total)).answers };
+            const fields = { name: v.name, subject: v.subject, total: int(v.total), reviewPick: v.reviewPick, dailyLimit: int(v.dailyLimit) || null, notes: v.notes, answers: SC.parseAnswers(v.answersText, int(v.total)).answers };
             const oldPath = l && l.pdf && l.pdf.path;
             const saveBtn = form.root.querySelector('[data-save]');
             const finish = (pdf) => commit(() => {
@@ -405,7 +406,7 @@
   // ---------- REVISÃO: REFAZER LISTA ----------
   // Cada exercício tem a própria revisão (ver logic.js, listDue/applyListSession):
   // o que você marcar como errado volta amanhã; o resto conta como certo e vai
-  // espaçando. A sessão mostra só o que venceu (máx. SESSION_MAX), errados primeiro.
+  // espaçando. A sessão mostra só o que venceu e cabe no limite diário da lista, errados primeiro.
   SC.modals.listRedo = (m) => {
     const l = col.find('exerciseLists', m.id);
     if (!l) return null;
@@ -531,12 +532,16 @@
               : `<p class="redo-fresh">Primeira vez: a lista toda <span>(1 a ${limit()})</span></p>`)
             : (d.early ? '<p class="field-help">Nada venceu ainda. Estes são os próximos a vencer.</p>' : '');
           const hidden = d.first ? 0 : d.all.length - d.today.length;
+          const capNote = (!d.first && !d.early && d.all.length > 0 && d.quota === 0 && !expand)
+            ? `<p class="field-help">Limite de hoje atingido (${d.limit} por dia nesta lista). O resto fica para amanhã.</p>`
+            : (!d.first && !d.early && hidden > 0 && !expand ? `<p class="field-help">Hoje: ${d.today.length} de ${d.all.length} que venceram (limite de ${d.limit} por dia). O resto fica para os próximos dias.</p>` : '');
           dueEl.innerHTML = `
             ${head}
+            ${capNote}
             <div class="due-chips">${keys.map(chip).join('')}</div>
             ${keys.length ? '<p class="field-help">Toque no exercício: 1× = errou (vermelho), 2× = acertou com dificuldade (laranja), 3× = tranquilo.</p>' : ''}
             ${d.lapsed.length ? '<p class="field-help"><span class="legend-dot"></span>Em vermelho claro: você errou na última vez.</p>' : ''}
-            ${hidden > 0 ? `<button type="button" class="btn-chip" data-role="more">+ ${hidden} que também venceram</button>` : ''}`;
+            ${hidden > 0 ? `<button type="button" class="btn-chip" data-role="more">Fazer também os ${hidden} que sobraram</button>` : ''}`;
           const more = dueEl.querySelector('[data-role="more"]');
           if (more) more.addEventListener('click', () => { expand = true; paint(); });
         }

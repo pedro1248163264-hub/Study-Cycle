@@ -149,7 +149,7 @@
   // Questões (bookmark individual) e listas de exercícios usam a mesma
   // recorrência; a nota 0-5 vem sempre do botão que você toca (mal/médio/bem).
   const MS_PER_DAY = 24 * 60 * 60 * 1000;
-  const MAX_INTERVAL_DAYS = 365;
+  const MAX_INTERVAL_DAYS = 180; // ~6 meses
   const GRADUATE_AFTER_N = 4; // acertos seguidos até a questão sair da fila ativa
   const REDO_QUALITY = { wrong: 1, hard: 3, easy: 5 };
 
@@ -161,7 +161,7 @@
   //   tranquilo -> anterior x (EF x 0,85)   (EF 2,5 => ~x2,1: 5, 11, 23, 49, 104…)
   //   dificuldade -> anterior x ~1,25 (cresce devagar, no mínimo +1 dia)
   // EF ("facilidade", 1,3 a 2,8) sobe um pouco com acertos tranquilos e cai com
-  // dificuldade/erro, então o que é difícil para VOCÊ espaça menos. Teto: 365 dias.
+  // dificuldade/erro, então o que é difícil para VOCÊ espaça menos. Teto: 180 dias (~6 meses).
   // quality: 1 = errou, 3 = acertou com dificuldade, 5 = acertou tranquilo.
   function sm2Step(n, EF, prevIntervalDays, quality) {
     EF = EF || 2.5;
@@ -207,7 +207,13 @@
   //   list.items[chave] = { n, EF, intervalDays, lastReviewedAt, nextReviewAt, lapses }
   // Quem você erra volta no dia seguinte; quem você acerta vai espaçando.
   // Exercício que nunca foi feito não tem entrada em items (= pendente).
-  const SESSION_MAX = 10; // teto de exercícios por sessão (errados sempre primeiro)
+  // Limite diário POR LISTA (list.dailyLimit; vazio = padrão). Conta tudo que já foi
+  // revisado hoje nessa lista; o que passar do limite fica para os próximos dias,
+  // errados primeiro. Na 1ª vez a lista toda é feita (sem limite).
+  const SESSION_MAX = 10;
+  const dailyLimit = (list) => Math.max(1, parseInt(list.dailyLimit, 10) || SESSION_MAX);
+  const startOfDay = (ms) => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  const startOfTomorrow = (ms) => { const d = new Date(ms); d.setHours(24, 0, 0, 0); return d.getTime(); };
 
   const keyNum = (k) => parseInt(k, 10);
   const keyLetter = (k) => (String(k).match(/[a-z]+$/i) || [''])[0].toLowerCase();
@@ -319,7 +325,7 @@
 
   // O que fazer agora numa lista: vencidos + nunca feitos, errados primeiro.
   //  all   = tudo que está pendente, na ordem de prioridade
-  //  today = só os primeiros SESSION_MAX (ou todos, se expand)
+  //  today = só o que cabe no limite diário da lista (ou todos, se expand)
   //  fresh = true quando a lista nunca foi feita (é a lista toda)
   function listDue(list, now, expand) {
     now = now || Date.now();
@@ -343,11 +349,17 @@
     const early = !first && all.length === 0;
     if (early) keys.sort((a, b) => items[a].nextReviewAt - items[b].nextReviewAt || compareKeys(a, b)).forEach((k) => all.push(k));
     const lapsed = all.filter((k) => items[k] && items[k].n === 0 && items[k].nextReviewAt <= now);
-    // Na 1ª vez faz tudo; depois, limita para não acumular.
+    // Na 1ª vez faz tudo; depois, respeita o limite diário da lista (o que já foi
+    // revisado hoje conta). Aberta antes da hora (early), mostra até o limite.
     // A seleção segue a prioridade (errados primeiro), mas a exibição fica em ordem
     // numérica e, dentro do mesmo número, alfabética: 1, 1a, 2c, 11b, 11c, 26e…
-    const today = ((expand || first) ? all : all.slice(0, Math.max(SESSION_MAX, lapsed.length))).slice().sort(compareKeys);
-    return { fresh, first, early, scope, all, lapsed, today, items };
+    const limit = dailyLimit(list);
+    const t0 = startOfDay(now);
+    const doneToday = keys.filter((k) => (items[k].lastReviewedAt || 0) >= t0).length;
+    const quota = Math.max(0, limit - doneToday);
+    const pick = (expand || first) ? all : (early ? all.slice(0, limit) : all.slice(0, quota));
+    const today = pick.slice().sort(compareKeys);
+    return { fresh, first, early, scope, all, lapsed, today, items, limit, doneToday, quota };
   }
 
   // Rótulo do exercício: "23a" fica "23a"; o resto do 23 vira "23 (restante)".
@@ -362,6 +374,23 @@
   //  - hardKeys: acertou, mas com dificuldade -> 3 dias
   //  - o resto da sessão: acertou tranquilo -> 5 dias
   // (session.hard === true, do formato antigo, vale para todos os acertos.)
+  // Espalha o vencimento: dentro de uma folga de ~15% do intervalo (5 dias => 4 a 6),
+  // escolhe o dia com menos exercícios já agendados; empate fica no mais próximo do
+  // intervalo calculado. Intervalos curtos (< 4 dias: erro = 1, difícil = 3) não mexem.
+  function spreadDays(base, load) {
+    if (base < 4) return base;
+    const w = Math.max(1, Math.round(base * 0.15));
+    let best = base, bestLoad = load[base] || 0;
+    for (let off = 1; off <= w; off++) {
+      for (const d of [base - off, base + off]) {
+        if (d < 2 || d > MAX_INTERVAL_DAYS) continue;
+        const l = load[d] || 0;
+        if (l < bestLoad) { best = d; bestLoad = l; }
+      }
+    }
+    return best;
+  }
+
   function applyListSession(list, session) {
     const now = Date.now();
     const items = Object.assign({}, listItems(list));
@@ -375,17 +404,28 @@
     hardKeys.forEach((k) => reviewed.add(k));
     // errou o exercício inteiro: os itens soltos dele (23a…) são redundantes
     const targets = Array.from(reviewed).filter((k) => !(/[a-z]$/i.test(k) && wrongNums.has(keyNum(k))));
+    // Carga por dia (dias a partir de hoje) dos exercícios que NÃO estão sendo reagendados
+    // agora: serve para espalhar os vencimentos em vez de empilhar tudo no mesmo dia.
+    const scope = listScope(list);
+    const load = {};
+    Object.keys(items).forEach((k) => {
+      if (targets.includes(k) || (scope && !scope.includes(k))) return;
+      const day = calendarDayDiff(items[k].nextReviewAt, now);
+      load[day] = (load[day] || 0) + 1;
+    });
     let right = 0, hardCount = 0;
-    targets.forEach((k) => {
+    targets.slice().sort(compareKeys).forEach((k) => {
       const it = items[k] || { n: 0, EF: 2.5, intervalDays: 0, lapses: 0 };
       const isWrong = wrong.includes(k);
       const hard = !isWrong && isHard(k);
       const step = sm2Step(it.n || 0, it.EF || 2.5, it.intervalDays || 1, isWrong ? 1 : (hard ? 3 : 5));
       if (!isWrong) right += 1;
       if (hard) hardCount += 1;
+      const days = isWrong ? step.intervalDays : spreadDays(step.intervalDays, load);
+      load[days] = (load[days] || 0) + 1;
       items[k] = {
-        n: step.n, EF: step.EF, intervalDays: step.intervalDays,
-        lastReviewedAt: now, nextReviewAt: now + step.intervalDays * MS_PER_DAY,
+        n: step.n, EF: step.EF, intervalDays: days,
+        lastReviewedAt: now, nextReviewAt: now + days * MS_PER_DAY,
         lapses: (it.lapses || 0) + (isWrong ? 1 : 0),
       };
     });
@@ -416,6 +456,8 @@
     const keys = Object.keys(items).filter((k) => !scope || scope.includes(k));
     if (!keys.length) return list.nextReviewAt || now; // nunca revisada
     const d = listDue(list, now);
+    // Tem coisa vencida/nunca feita, mas o limite de hoje já foi usado: só amanhã.
+    if (d.all.length && !d.early && !d.today.length) return startOfTomorrow(now);
     if (d.all.some((k) => !d.items[k])) return now; // ainda há exercício nunca feito
     return Math.min.apply(null, keys.map((k) => items[k].nextReviewAt));
   }
@@ -506,7 +548,7 @@
   Object.assign(SC, {
     calculateAllocations, generateSequence, getDerived,
     GRADUATE_AFTER_N, sm2Step, applyQuestionRedo, applyListSession,
-    SESSION_MAX, parseExerciseKeys, listScope, listItems, listDue, listNextAt, keyLabel, compareKeys,
+    SESSION_MAX, dailyLimit, MAX_INTERVAL_DAYS, parseExerciseKeys, listScope, listItems, listDue, listNextAt, keyLabel, compareKeys,
     visibleAnswers, parseAnswers, serializeAnswers,
     interleaveBySubject, pendingReviews, calendarDayDiff, formatDate,
   });
