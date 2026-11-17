@@ -1,6 +1,6 @@
 # Study Cycle
 
-Site estático (HTML + CSS + JS puro, **sem build**) para organizar ciclos de estudo semanais, acompanhar o que você está estudando e registrar erros. Funciona offline depois da primeira visita e roda direto no GitHub Pages.
+Site estático (HTML + CSS + JS puro, **sem build**) para organizar ciclos de estudo semanais, acompanhar o que você está estudando. Funciona offline depois da primeira visita e roda direto no GitHub Pages.
 
 > Histórico de mudanças e decisões: [`CHANGELOG.md`](./CHANGELOG.md). Ao alterar o app (aqui ou em outro chat), registre lá uma entrada nova no topo.
 
@@ -10,7 +10,6 @@ Site estático (HTML + CSS + JS puro, **sem build**) para organizar ciclos de es
 |---|---|
 | **Study Cycle** | Decide quanto e em que ordem estudar cada matéria na semana. |
 | **Study Log** | O que você está estudando agora e onde parou (livro, vídeo, questões). |
-| **Error Log** | O que você errou e por quê, com filtros. |
 | **Simulados** | Provas completas por matéria, tempo e comparação com o simulado anterior. |
 | **Revisão** | Listas de exercícios com revisão por exercício (marque só os que errou)  e SM-2 para questões individuais (texto/imagem, OCR, resolução). |
 
@@ -35,7 +34,7 @@ js/logic.js         cálculo do ciclo e SM-2 (funções puras)
 js/sync.js          sincronização Supabase (última alteração vence)
 js/ocr.js           redimensionar imagem + OCR (Tesseract, baixado sob demanda)
 js/ui.js            peças reutilizáveis: botões, cartões, filtros, abas, campos, bindForm
-js/screens.js       as 5 telas
+js/screens.js       as 4 telas
 js/modals.js        todos os modais
 js/main.js          ações (data-action), eventos, inicialização
 sw.js               Service Worker (offline; rede primeiro)
@@ -62,9 +61,6 @@ manifest.webmanifest  instalável como app (PWA)
 ### Study Log
 Nome, categoria (Livro/Vídeo/Questões), status ativo/concluído, matéria opcional. Campos de posição por categoria (capítulo+página / episódio+tempo / exercício). Tocar em "Próxima matéria" mostra só os materiais ativos daquela matéria.
 
-### Error Log
-Matéria (lista ou texto livre), tópico, descrição e tipo de erro (7 opções); filtros por matéria e tipo.
-
 ### Revisão
 Dois motores independentes com a mesma recorrência (SM-2 adaptado, ver CHANGELOG v22); a nota vem sempre do que você marca.
 - **Listas de exercícios**: você informa nome, matéria (opcional) e **quantos exercícios** a lista tem. Ela entra na fila de hoje e, cada exercício tem a própria revisão. Ao refazer, você marca só o que **errou** (volta em **1 dia**) e o que acertou **com dificuldade** (**3 dias**); o resto conta como tranquilo (**5 dias**). Depois os intervalos crescem a cada acerto (tranquilo ≈ ×2, dificuldade ≈ ×1,25; teto de 180 dias). Para a carga não acumular, cada lista tem um **limite diário** (campo "Limite por dia"; padrão 10): o que passar disso fica para os próximos dias, errados primeiro, e o vencimento é **espalhado** em ±15% do intervalo para os exercícios não voltarem todos no mesmo dia. Cada exercício pode ter **gabarito** (editando a lista ou direto na tela de refazer), atrelado a "Quais revisar": fora do escopo, ele não aparece. **A lista nunca sai do ciclo** — só você a exclui. Dá para anexar o **PDF da lista** (até 25 MB) e vê-lo no site, inclusive na hora de avaliar. O PDF vai para o **Supabase Storage** (bucket privado `list-pdfs`) e abre em qualquer aparelho (visualizador + abrir em outra aba + baixar). **Nada fica salvo no aparelho**: o PDF é baixado só para a tela e descartado ao fechar (precisa de internet para ver). Com a lista viajam só `pdf: { name, size, path }`. Setup único: rodar `supabase/pdf-storage.sql` no SQL Editor.
@@ -73,6 +69,9 @@ Dois motores independentes com a mesma recorrência (SM-2 adaptado, ver CHANGELO
 - Rodadas de fixação do mesmo dia **não** devem ser registradas (decisão de uso).
 - **OCR**: "Extrair texto da imagem" preenche o campo para você revisar (precisa de internet na 1ª vez).
 - Revisão de **tópicos** (escada de domínio) foi removida no v15; dados antigos (`topicReviews`) continuam guardados, só sem tela.
+
+### Atalho que poupa tempo (v23)
+- **Começar revisões** (Study Cycle, quando há algo vencido): abre a primeira revisão da fila de hoje e, ao concluir, já abre a seguinte, até acabar.
 
 ### Persistência e sincronização
 Tudo é salvo automaticamente no **IndexedDB** do navegador (PDFs das listas não ficam no aparelho: vão para o Storage da nuvem) (e o app pede ao navegador para não apagá-lo). O botão de sincronizar (com senha) envia/recebe os dados pela nuvem: vence a alteração mais recente. Imagens salvas viajam junto, então um banco com muitas imagens deixa a sincronização mais pesada.

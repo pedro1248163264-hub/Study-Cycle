@@ -19,7 +19,7 @@
     studyCounter: 'number',
     currentBlock: 'object',
     studyLogs: 'array',
-    errorLogs: 'array',
+    errorLogs: 'array',   // sem tela desde o v23 (Error Log aposentado); fica aqui só para não apagar dados antigos
     topicReviews: 'array', // sem tela desde o v15; fica aqui só para não apagar dados antigos
     exerciseLists: 'array',
     mockExams: 'array',
@@ -59,10 +59,11 @@
     sync: { status: 'idle', direction: null, error: null },
     ui: {
       screen: 'dashboard',
+      queueDone: [],           // ids já abertos na rodada "Começar revisões"
       studyLogTab: 'active',   // 'active' | 'completed'
       reviewTab: 'today',      // 'today' | 'lists' | 'questions'
       questionSubTab: 'active', // 'active' | 'graduated'
-      filters: { log: {}, error: {}, lists: {}, questions: {} },
+      filters: { log: {}, lists: {}, questions: {} },
     },
   };
 

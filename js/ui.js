@@ -282,10 +282,33 @@
 
   // Aplica uma alteração e fecha o modal: o fim de quase todo "Salvar".
   function commit(mutate) {
+    const inQueue = state.modal && state.modal.queue; // modal aberto por "Começar revisões"
     mutate();
     state.modal = null;
     saveState();
+    if (inQueue) { nextInQueue(); return; }
     render();
+  }
+
+  // Modo fila: ao terminar uma revisão, abre a próxima vencida; sem pendência, avisa e fecha.
+  // queueDone evita voltar a um item já aberto nesta rodada (ex.: "salvar e continuar depois").
+  function nextInQueue() {
+    const next = SC.reviewQueue(state).find((x) => !state.ui.queueDone.includes(x.id));
+    if (!next) { render(); toast('Revisões de hoje concluídas ✔'); return; }
+    state.ui.queueDone.push(next.id);
+    openModal(next.kind === 'list' ? 'listRedo' : 'redo', { id: next.id, queue: true });
+  }
+  function startQueue() { state.ui.queueDone = []; nextInQueue(); }
+
+  // Aviso curto na base da tela, com "Desfazer" opcional.
+  function toast(msg, undo) {
+    let root = document.getElementById('toast-root');
+    if (!root) { root = document.createElement('div'); root.id = 'toast-root'; document.body.appendChild(root); }
+    clearTimeout(toast.t);
+    const hide = () => { root.innerHTML = ''; };
+    root.innerHTML = `<div class="toast"><span>${esc(msg)}</span>${undo ? '<button type="button" class="toast-undo">Desfazer</button>' : ''}</div>`;
+    if (undo) root.querySelector('.toast-undo').onclick = () => { hide(); undo(); };
+    toast.t = setTimeout(hide, 6000);
   }
 
   // ---------- RENDER ----------
@@ -319,6 +342,6 @@
     icon, chip, button, screenHeader, emptyState, tabs, logCard, cardMain, cardList,
     subjectFilterOptions, applyFilters, filterBar, dueBadge,
     inputField, selectControl, selectField, subjectField, choice, ratingRow, formActions, errorBox,
-    bindForm, openModal, closeModal, commit, applyTheme, render,
+    bindForm, openModal, closeModal, commit, applyTheme, render, toast, startQueue,
   });
 })();

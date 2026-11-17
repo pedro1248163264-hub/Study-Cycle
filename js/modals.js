@@ -228,25 +228,6 @@
     };
   };
 
-  // ---------- ERROR LOG (registrar / editar) ----------
-  SC.modals.error = (m) => {
-    const err = m.id ? col.find('errorLogs', m.id) : null;
-    if (m.id && !err) return null;
-    return {
-      title: err ? 'Editar erro' : 'Registrar erro',
-      body: `
-        ${subjectField({ value: err ? err.subject : (state.subjects[0] || {}).name || '', custom: true })}
-        ${inputField({ name: 'topic', label: 'Tópico', value: err ? err.topic : '', placeholder: 'ex: Limites', bold: true })}
-        ${inputField({ name: 'description', label: 'Descrição', value: err ? err.description : '', placeholder: 'O que deu errado?', rows: 3 })}
-        ${selectField({ name: 'errorType', label: 'Tipo de erro', value: err ? err.errorType : SC.ERROR_TYPES[0][0], options: SC.ERROR_TYPES.filter((t) => !t[3]).map((t) => [t[0], t[1]]) })}
-        ${formActions({ save: err ? 'Salvar' : 'Registrar erro' })}`,
-      wire: () => bindForm({
-        validate: (v) => !!(v.subject && v.topic && v.description),
-        onSave: (v) => commit(() => col.put('errorLogs', Object.assign(err ? Object.assign({}, err) : { id: uid() }, pick(v, ['subject', 'topic', 'description', 'errorType'])))),
-      }),
-    };
-  };
-
   // ---------- REVISÃO: LISTA DE EXERCÍCIOS (adicionar / editar) ----------
   const MAX_PDF_MB = 25;
   const fmtSize = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');

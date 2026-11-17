@@ -536,6 +536,15 @@
     };
   }
 
+  // Fila de hoje (listas + questões vencidas), misturada entre matérias.
+  function reviewQueue(state, now) {
+    now = now || Date.now();
+    const lists = state.exerciseLists.map((x) => ({ kind: 'list', id: x.id, subject: x.subject, nextReviewAt: listNextAt(x, now) }));
+    const qs = state.questionBank.filter((q) => !q.retired).map((x) => ({ kind: 'question', id: x.id, subject: x.subject, nextReviewAt: x.nextReviewAt }));
+    return interleaveBySubject(lists.concat(qs).filter((x) => x.nextReviewAt && x.nextReviewAt <= now)
+      .sort((a, b) => a.nextReviewAt - b.nextReviewAt));
+  }
+
   // Diferença em DIAS DE CALENDÁRIO (meia-noite a meia-noite), não em blocos
   // de 24h — senão uma questão criada agora aparecia como "Atrasada 1d".
   function calendarDayDiff(targetMs, fromMs) {
@@ -550,6 +559,6 @@
     GRADUATE_AFTER_N, sm2Step, applyQuestionRedo, applyListSession,
     SESSION_MAX, dailyLimit, MAX_INTERVAL_DAYS, parseExerciseKeys, listScope, listItems, listDue, listNextAt, keyLabel, compareKeys,
     visibleAnswers, parseAnswers, serializeAnswers,
-    interleaveBySubject, pendingReviews, calendarDayDiff, formatDate,
+    interleaveBySubject, reviewQueue, pendingReviews, calendarDayDiff, formatDate,
   });
 })();

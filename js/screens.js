@@ -12,20 +12,6 @@
   const CATEGORY_LABEL = { Book: 'Livro', Video: 'Vídeo', Question: 'Questões' };
   const CATEGORY_ICON = { Book: 'bookOpen', Video: 'video', Question: 'helpCircle' };
 
-  // Tipos de erro: [valor salvo, rótulo, cor do selo]. Os valores ficam em
-  // inglês porque já estão gravados nos dados existentes.
-  const ERROR_TYPES = [
-    ['Knowledge gap', 'Lacuna de teoria', 'violet'],
-    ['Missed approach', 'Sabia, mas não viu o caminho', 'orange'],
-    ['Attention / careless mistake', 'Desatenção / conta', 'amber'],
-    ['Time management', 'Estourou o tempo', 'blue'],
-    ['Forgot concept', 'Esqueci o conceito', 'fuchsia'],
-    ['Other', 'Outro', 'neutral'],
-    // antigos: continuam aparecendo nos dados já salvos, mas saíram da lista de escolha
-    ['Calculation', 'Erro de cálculo (antigo)', 'rose', true],
-    ['Misunderstood question', 'Interpretação errada (antigo)', 'orange', true],
-  ];
-
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   const excerpt = (s, n) => (s.length > n ? s.slice(0, n) + '…' : s);
 
@@ -65,7 +51,16 @@
         <div class="subjects-grid">${subjectCards(d)}</div>
       </section>`;
 
-    return `<div>${overview}${sequence}${subjects}</div>`; // <div> simples: o espaçamento vem do CSS de blocos
+    const nDue = SC.reviewQueue(state).length;
+    const reviews = nDue ? `
+      <section class="section">
+        <div class="section-header"><h3>Revisões de hoje</h3></div>
+        <div class="card sequence-card"><div class="sequence-content">
+          <p class="log-card-name">${plural(nDue, 'item vencido', 'itens vencidos')} — listas e questões misturadas, uma depois da outra.</p>
+          ${button('Começar revisões', 'repeat', 'start-queue')}
+        </div></div>
+      </section>` : '';
+    return `<div>${overview}${sequence}${reviews}${subjects}</div>`; // <div> simples: o espaçamento vem do CSS de blocos
   }
 
   function sequenceCard(d) {
@@ -224,45 +219,6 @@
       ${base.length ? filterBar('log', [
         { field: 'subject', all: 'Todas as matérias', options: subjectFilterOptions(state.studyLogs).map((s) => [s, s]) },
         { field: 'category', all: 'Todos os materiais', options: STUDY_CATEGORIES.map((c) => [c, CATEGORY_LABEL[c]]) },
-      ], shown.length) : ''}
-      ${list}
-    </div>`;
-  }
-
-  // ---------- ERROR LOG ----------
-  function errorLogScreen() {
-    const shown = applyFilters(state.errorLogs, 'error');
-    const type = (t) => ERROR_TYPES.find((x) => x[0] === t) || [t, t, 'neutral'];
-
-    let list;
-    if (state.errorLogs.length === 0) {
-      list = emptyState('alertTriangle', 'Nenhum erro registrado', 'Registre seus erros ao estudar para identificar padrões e fechar lacunas.', button('Registrar erro', 'plus', 'modal', { modal: 'error' }));
-    } else if (shown.length === 0) {
-      list = emptyState('filter', 'Nenhum erro corresponde aos filtros', 'Tente ajustar ou limpar os filtros.');
-    } else {
-      list = cardList(shown.map((e) => logCard({
-        cls: 'error-card',
-        mainCls: 'error-card-body',
-        main: `
-          <div class="error-card-title">
-            <span class="error-card-subject">${esc(e.subject)}</span>
-            <span class="error-card-sep">&middot;</span>
-            <span class="error-card-topic">${esc(e.topic)}</span>
-          </div>
-          <p class="error-card-desc">&ldquo;${esc(e.description)}&rdquo;</p>
-          <div><span class="error-badge error-badge-${type(e.errorType)[2]}">${esc(type(e.errorType)[1])}</span></div>`,
-        actions: [
-          chip('Editar', 'edit', 'modal', { modal: 'error', id: e.id }),
-          chip('Excluir', 'trash', 'remove', { col: 'errorLogs', id: e.id, confirm: 'Excluir este erro?' }, 'danger'),
-        ],
-      })));
-    }
-
-    return `<div class="screen">
-      ${screenHeader('Error Log', 'Registre erros para identificar padrões e melhorar.', button('Registrar erro', 'plus', 'modal', { modal: 'error' }))}
-      ${state.errorLogs.length ? filterBar('error', [
-        { field: 'subject', all: 'Todas as matérias', options: subjectFilterOptions(state.errorLogs).map((s) => [s, s]) },
-        { field: 'errorType', all: 'Todos os tipos', options: ERROR_TYPES.map((t) => [t[0], t[1]]) },
       ], shown.length) : ''}
       ${list}
     </div>`;
@@ -464,19 +420,16 @@
           actions: [chip('Excluir', 'trash', 'remove', { col: 'mockExams', id: e.id, confirm: 'Excluir este simulado?' }, 'danger')],
         });
       }));
-    const causes = ERROR_TYPES.map((t) => [t[1], state.errorLogs.filter((x) => x.errorType === t[0]).length]).filter((c) => c[1]);
     return `<div class="screen">
       ${screenHeader('Simulados', 'A régua: prova completa, cronometrada, comparada com o simulado anterior.', button('Registrar simulado', 'plus', 'modal', { modal: 'mock' }))}
-      ${causes.length ? `<div class="review-section-title">${icon('alertTriangle')}Causas dos erros (Error Log)</div><div style="display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:1rem">${causes.map((c) => `<span class="error-badge error-badge-neutral">${esc(c[0])}: ${c[1]}</span>`).join('')}</div>` : ''}
       ${list}
     </div>`;
   }
 
   SC.screens.dashboard = { label: 'Study Cycle', icon: 'layoutDashboard', render: dashboardScreen };
   SC.screens['study-log'] = { label: 'Study Log', icon: 'bookMarked', render: studyLogScreen };
-  SC.screens['error-log'] = { label: 'Error Log', icon: 'alertTriangle', render: errorLogScreen };
   SC.screens['question-review'] = { label: 'Revisão', icon: 'repeat', render: reviewScreen };
   SC.screens.mocks = { label: 'Simulados', icon: 'target', render: mockScreen };
 
-  Object.assign(SC, { plural, STUDY_CATEGORIES, CATEGORY_LABEL, CATEGORY_ICON, ERROR_TYPES, LIST_RESULT, scoreText, studyLogCard, pendingReviewCards });
+  Object.assign(SC, { plural, STUDY_CATEGORIES, CATEGORY_LABEL, CATEGORY_ICON, LIST_RESULT, scoreText, studyLogCard, pendingReviewCards });
 })();

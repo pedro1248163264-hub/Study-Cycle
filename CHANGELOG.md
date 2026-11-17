@@ -2,6 +2,19 @@
 
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
+## [v23] — Error Log aposentado + menos toques no dia a dia
+
+### Removido
+- Tela, modal e filtros do **Error Log** e o bloco "Causas dos erros" dos Simulados. `errorLogs` continua em `SYNCED` (legado, sem tela) para não apagar dados já salvos, como `topicReviews`.
+
+### Adicionado
+- **Começar revisões** (`start-queue`): `SC.reviewQueue` (`logic.js`) devolve a fila de hoje misturada por matéria; os modais abertos por ela carregam `queue: true` e `commit` abre o próximo ao concluir (`nextInQueue`, `ui.js`). Fechar o modal encerra a rodada.
+
+### Arquivos
+`js/screens.js`, `js/modals.js`, `js/store.js`, `js/logic.js`, `js/ui.js`, `js/main.js`, `css/styles.css`, `README.md`.
+
+---
+
 ## [v22.2] — Limite diário por lista, espalhamento e teto de 6 meses
 
 ### Adicionado

@@ -1745,3 +1745,8 @@ html.dark .btn-chip-hard { border-color: #FBBF24; color: #FCD34D; }
 .gab-row { display: flex; align-items: center; gap: 0.375rem; font-size: 0.8125rem; font-weight: 600; }
 .gab-row > span { min-width: 2rem; text-align: right; color: var(--muted-foreground, #64748B); }
 .gab-row .text-input { padding: 0.375rem 0.5rem; font-size: 0.875rem; min-width: 0; }
+
+/* Aviso curto (toast) com "Desfazer" */
+#toast-root { position: fixed; left: 0; right: 0; bottom: calc(1rem + env(safe-area-inset-bottom)); display: flex; justify-content: center; z-index: 1000; pointer-events: none; }
+.toast { pointer-events: auto; display: flex; align-items: center; gap: 1rem; background: #1f2937; color: #fff; padding: 0.7rem 1rem; border-radius: 0.75rem; box-shadow: 0 8px 24px rgba(0,0,0,.25); font-size: 0.9rem; }
+.toast-undo { background: none; border: 0; color: #a5b4fc; font-weight: 600; cursor: pointer; font: inherit; font-weight: 600; }

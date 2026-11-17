@@ -26,6 +26,8 @@
     },
     'close-modal': closeModal,
 
+    'start-queue': () => SC.startQueue(),
+
     set(el) { state.ui[el.dataset.key] = el.dataset.value; render(); },
     'clear-filters'(el) { state.ui.filters[el.dataset.group] = {}; render(); },
 
