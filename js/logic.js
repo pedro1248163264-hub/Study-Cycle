@@ -271,20 +271,47 @@
 
   // Listas antigas (só tinham nota da lista toda + wrong[] no histórico) ganham
   // itens: os errados da última vez voltam em 1 dia; os outros, que passam a
-  // contar como certos, mantêm o agendamento que a lista já tinha.
+  // contar como certos, voltam NO MÁXIMO LEGACY_MAX_DAYS depois da última revisão.
+  // (Antes eles herdavam o vencimento da lista inteira, sem teto: daí vinham
+  // datas absurdas, tipo "daqui a 2 anos", e a lista toda vencendo junta.)
+  const LEGACY_MAX_DAYS = 30;
+
+  // Item com intervalo/vencimento além do teto (dado antigo ou corrompido) é
+  // trazido de volta ao teto. Não altera o objeto original.
+  function clampItems(items) {
+    const out = {};
+    Object.keys(items).forEach((k) => {
+      const it = items[k];
+      const base = it.lastReviewedAt || 0;
+      const limit = base ? base + MAX_INTERVAL_DAYS * MS_PER_DAY : Infinity;
+      const bad = (it.intervalDays || 0) > MAX_INTERVAL_DAYS || (it.nextReviewAt || 0) > limit;
+      out[k] = bad
+        ? Object.assign({}, it, {
+            intervalDays: Math.min(it.intervalDays || 1, MAX_INTERVAL_DAYS),
+            nextReviewAt: Math.min(it.nextReviewAt, limit),
+          })
+        : it;
+    });
+    return out;
+  }
+
   function listItems(list) {
-    if (list.items) return list.items;
+    if (list.items) return clampItems(list.items);
     const items = {};
     const last = (list.history || []).slice(-1)[0];
-    if (last && list.lastReviewedAt) {
+    // listas muito antigas podem não ter lastReviewedAt; o histórico sabe quando foi
+    const reviewedAt = list.lastReviewedAt || (last && last.at) || 0;
+    if (last && reviewedAt) {
       const done = last.total || list.total;
       const wrong = (last.wrong || []).map(String);
       const scope = listScope(list);
       const universe = scope ? scope.filter((k) => keyNum(k) <= done) : Array.from({ length: done }, (_, i) => String(i + 1));
+      const okDays = Math.min(Math.max(1, list.intervalDays || 1), LEGACY_MAX_DAYS);
+      const okAt = Math.min(list.nextReviewAt || Infinity, reviewedAt + LEGACY_MAX_DAYS * MS_PER_DAY);
       for (const key of universe) {
         items[key] = (wrong.includes(key) || wrong.includes(String(keyNum(key))))
-          ? { n: 0, EF: 2.3, intervalDays: 1, lastReviewedAt: list.lastReviewedAt, nextReviewAt: list.lastReviewedAt + MS_PER_DAY, lapses: 1 }
-          : { n: list.n || 1, EF: list.EF || 2.5, intervalDays: list.intervalDays || 1, lastReviewedAt: list.lastReviewedAt, nextReviewAt: list.nextReviewAt || Date.now(), lapses: 0 };
+          ? { n: 0, EF: 2.3, intervalDays: 1, lastReviewedAt: reviewedAt, nextReviewAt: reviewedAt + MS_PER_DAY, lapses: 1 }
+          : { n: list.n || 1, EF: list.EF || 2.5, intervalDays: okDays, lastReviewedAt: reviewedAt, nextReviewAt: Math.max(okAt, reviewedAt + MS_PER_DAY), lapses: 0 };
       }
     }
     return items;

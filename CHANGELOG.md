@@ -2,6 +2,18 @@
 
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
+## [v22.1] — Listas antigas: fim do "refazer tudo" e do "daqui a 2 anos"
+
+### Corrigido
+- **Migração de listas antigas** (`listItems`, `logic.js`): os exercícios que não estavam errados herdavam o vencimento e o intervalo da *lista inteira*, sem teto. Resultado: datas como "daqui a 2 anos" e a lista toda vencendo junto. Agora esses exercícios voltam no máximo **30 dias** depois da última revisão (`LEGACY_MAX_DAYS`); os errados continuam voltando em 1 dia.
+- **Lista antiga sem `lastReviewedAt`** caía como "nunca revisada" (Primeira vez: a lista toda). Agora usa a data do último item do `history`.
+- **Teto também nos itens já salvos** (`clampItems`): intervalo acima de `MAX_INTERVAL_DAYS` ou vencimento além do teto é trazido de volta ao teto ao ler.
+
+### Arquivos
+`js/logic.js`.
+
+---
+
 ## [v22] — Gabarito por exercício, "acertei com dificuldade" e correção do "Atrasada 11d"
 
 ### Corrigido
