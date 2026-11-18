@@ -432,7 +432,7 @@
           </div>
           <p class="field-help" data-role="hard-msg" role="alert" style="color:#E11D48;display:none"></p>
           <div class="list-wrong-chips" data-role="hard-chips"></div>
-          <p class="field-help">Errou = volta amanhã · com dificuldade = 3 dias · tranquilo (o que você não marcar) = 5 dias, e depois vai espaçando mais.</p>
+          <p class="field-help">Errou = volta amanhã · com dificuldade = 2 dias · tranquilo (o que você não marcar) = 5 dias, e depois vai espaçando mais conforme o histórico deste exercício. A lista pode aparecer amanhã pelos exercícios errados; os demais mantêm o próprio prazo.</p>
         </div>
 
         <details class="redo-more" data-role="gab">

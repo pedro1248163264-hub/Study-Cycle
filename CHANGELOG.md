@@ -1,5 +1,18 @@
 # Changelog
 
+## [v24] — Agendamento individual sem efeito do atraso
+
+### Corrigido
+- A migração de listas legadas não copia mais `list.n` (quantas vezes a lista foi revisada) para cada exercício. Cada item começa com apenas o resultado individual mais recente que o histórico permite recuperar; resultados por questão passam a ser mantidos em `items[chave].history`.
+- A data em que uma revisão foi feita não muda o próximo intervalo. Acerto tranquilo começa em 5 dias (espalhado entre 4–6), difícil em 2 dias e erro em 1 dia; acertos posteriores ampliam o intervalo individual.
+- A lista ainda pode aparecer como pendente amanhã quando algum exercício foi errado, mas os exercícios acertados não são puxados para amanhã.
+
+### Revisão geral da lógica
+- O ciclo, a fila, os limites diários, os gabaritos e a graduação de questões foram inspecionados. A fila por questão permanece separada da revisão por exercício de listas; o ajuste foi concentrado no agendamento e na migração individual, onde dados agregados podiam ser confundidos com histórico individual.
+
+### Arquivos
+`js/logic.js`, `js/modals.js`, `js/store.js`, `README.md`.
+
 Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) consiga entender rapidamente o que foi feito e por quê, sem precisar reler o `app.js` inteiro. Sempre que alterar o app — aqui ou por fora — vale a pena adicionar uma entrada nova no topo.
 
 ## [v23] — Error Log aposentado + menos toques no dia a dia

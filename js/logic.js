@@ -153,9 +153,11 @@
   const GRADUATE_AFTER_N = 4; // acertos seguidos até a questão sair da fila ativa
   const REDO_QUALITY = { wrong: 1, hard: 3, easy: 5 };
 
-  // Agendamento (v22). Regras fixas na 1ª vez que acerta (ou depois de um erro):
+  // Agendamento (v24). Erro reinicia; primeiro acerto tranquilo = 5 dias.
+  // Questões mantêm 3 dias para difícil; itens de lista passam 2 como override.
+  // Regras fixas na 1ª vez que acerta (ou depois de um erro):
   //   errou                 -> amanhã (1 dia) e recomeça
-  //   acertou com dificuldade -> 3 dias
+  //   acertou com dificuldade -> 2 dias
   //   acertou tranquilo       -> 5 dias
   // Depois, o intervalo cresce a cada acerto:
   //   tranquilo -> anterior x (EF x 0,85)   (EF 2,5 => ~x2,1: 5, 11, 23, 49, 104…)
@@ -163,7 +165,7 @@
   // EF ("facilidade", 1,3 a 2,8) sobe um pouco com acertos tranquilos e cai com
   // dificuldade/erro, então o que é difícil para VOCÊ espaça menos. Teto: 180 dias (~6 meses).
   // quality: 1 = errou, 3 = acertou com dificuldade, 5 = acertou tranquilo.
-  function sm2Step(n, EF, prevIntervalDays, quality) {
+  function sm2Step(n, EF, prevIntervalDays, quality, firstHardDays) {
     EF = EF || 2.5;
     if (quality < 3) {
       return { n: 0, EF: Math.max(1.3, EF - 0.2), intervalDays: 1 };
@@ -171,7 +173,7 @@
     const hard = quality < 5;
     const nextEF = hard ? Math.max(1.3, EF - 0.15) : Math.min(2.8, EF + 0.05);
     let interval;
-    if (n === 0) interval = hard ? 3 : 5;
+    if (n === 0) interval = hard ? (firstHardDays || 3) : 5;
     else {
       const prev = Math.max(1, prevIntervalDays || 1);
       const mult = hard ? Math.max(1.2, EF * 0.5) : EF * 0.85;
@@ -275,12 +277,9 @@
     return keys.length ? keys : null;
   }
 
-  // Listas antigas (só tinham nota da lista toda + wrong[] no histórico) ganham
-  // itens: os errados da última vez voltam em 1 dia; os outros, que passam a
-  // contar como certos, voltam NO MÁXIMO LEGACY_MAX_DAYS depois da última revisão.
-  // (Antes eles herdavam o vencimento da lista inteira, sem teto: daí vinham
-  // datas absurdas, tipo "daqui a 2 anos", e a lista toda vencendo junta.)
-  const LEGACY_MAX_DAYS = 30;
+  // Listas antigas sem estado por exercício só permitem recuperar o resultado
+  // da revisão mais recente. Não usar list.n (revisões da lista) como acertos
+  // de cada exercício: isso faria exercícios parecerem mais dominados do que são.
 
   // Item com intervalo/vencimento além do teto (dado antigo ou corrompido) é
   // trazido de volta ao teto. Não altera o objeto original.
@@ -312,12 +311,19 @@
       const wrong = (last.wrong || []).map(String);
       const scope = listScope(list);
       const universe = scope ? scope.filter((k) => keyNum(k) <= done) : Array.from({ length: done }, (_, i) => String(i + 1));
-      const okDays = Math.min(Math.max(1, list.intervalDays || 1), LEGACY_MAX_DAYS);
-      const okAt = Math.min(list.nextReviewAt || Infinity, reviewedAt + LEGACY_MAX_DAYS * MS_PER_DAY);
+      const hard = new Set((last.hardKeys || []).map(String));
       for (const key of universe) {
-        items[key] = (wrong.includes(key) || wrong.includes(String(keyNum(key))))
-          ? { n: 0, EF: 2.3, intervalDays: 1, lastReviewedAt: reviewedAt, nextReviewAt: reviewedAt + MS_PER_DAY, lapses: 1 }
-          : { n: list.n || 1, EF: list.EF || 2.5, intervalDays: okDays, lastReviewedAt: reviewedAt, nextReviewAt: Math.max(okAt, reviewedAt + MS_PER_DAY), lapses: 0 };
+        const wasWrong = wrong.includes(key) || wrong.includes(String(keyNum(key)));
+        const wasHard = !wasWrong && (hard.has(key) || hard.has(String(keyNum(key))));
+        const quality = wasWrong ? 1 : wasHard ? 3 : 5;
+        const step = sm2Step(0, 2.5, 1, quality, 2);
+        const days = wasWrong ? 1 : wasHard ? 2 : step.intervalDays;
+        items[key] = {
+          n: wasWrong ? 0 : 1, EF: step.EF, intervalDays: days,
+          lastReviewedAt: reviewedAt, nextReviewAt: reviewedAt + days * MS_PER_DAY,
+          lapses: wasWrong ? 1 : 0,
+          history: [{ at: reviewedAt, result: wasWrong ? 'wrong' : wasHard ? 'hard' : 'easy', intervalDays: days }],
+        };
       }
     }
     return items;
@@ -371,12 +377,12 @@
 
   // Fecha uma sessão: `session` = { keys[] (o que estava na sessão), wrong[], hardKeys[], upTo }
   //  - wrong: errou -> volta amanhã
-  //  - hardKeys: acertou, mas com dificuldade -> 3 dias
+  //  - hardKeys: acertou, mas com dificuldade -> 2 dias
   //  - o resto da sessão: acertou tranquilo -> 5 dias
   // (session.hard === true, do formato antigo, vale para todos os acertos.)
   // Espalha o vencimento: dentro de uma folga de ~15% do intervalo (5 dias => 4 a 6),
   // escolhe o dia com menos exercícios já agendados; empate fica no mais próximo do
-  // intervalo calculado. Intervalos curtos (< 4 dias: erro = 1, difícil = 3) não mexem.
+  // intervalo calculado. Intervalos curtos (< 4 dias: erro = 1, difícil = 2) não mexem.
   function spreadDays(base, load) {
     if (base < 4) return base;
     const w = Math.max(1, Math.round(base * 0.15));
@@ -418,7 +424,7 @@
       const it = items[k] || { n: 0, EF: 2.5, intervalDays: 0, lapses: 0 };
       const isWrong = wrong.includes(k);
       const hard = !isWrong && isHard(k);
-      const step = sm2Step(it.n || 0, it.EF || 2.5, it.intervalDays || 1, isWrong ? 1 : (hard ? 3 : 5));
+      const step = sm2Step(it.n || 0, it.EF || 2.5, it.intervalDays || 1, isWrong ? 1 : (hard ? 3 : 5), 2);
       if (!isWrong) right += 1;
       if (hard) hardCount += 1;
       const days = isWrong ? step.intervalDays : spreadDays(step.intervalDays, load);
@@ -427,6 +433,7 @@
         n: step.n, EF: step.EF, intervalDays: days,
         lastReviewedAt: now, nextReviewAt: now + days * MS_PER_DAY,
         lapses: (it.lapses || 0) + (isWrong ? 1 : 0),
+        history: (it.history || []).concat([{ at: now, result: isWrong ? 'wrong' : hard ? 'hard' : 'easy', quality: isWrong ? 1 : hard ? 3 : 5, intervalDays: days }]),
       };
     });
     Object.keys(items).forEach((k) => { if (/[a-z]$/i.test(k) && wrongNums.has(keyNum(k)) && !targets.includes(k)) delete items[k]; });
