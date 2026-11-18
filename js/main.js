@@ -57,6 +57,7 @@
     },
 
     'reset-cycle'() {
+      if (!confirm('Reiniciar o ciclo? As horas concluídas de todas as matérias serão zeradas.')) return;
       state.subjects = state.subjects.map((s) => Object.assign({}, s, { completedHours: 0 }));
       state.currentBlock = null;
       persist();

@@ -293,9 +293,11 @@
   // Modo fila: ao terminar uma revisão, abre a próxima vencida; sem pendência, avisa e fecha.
   // queueDone evita voltar a um item já aberto nesta rodada (ex.: "salvar e continuar depois").
   function nextInQueue() {
-    const next = SC.reviewQueue(state).find((x) => !state.ui.queueDone.includes(x.id));
+    // Listas e questões têm coleções e IDs independentes. A chave composta
+    // evita que uma colisão de ID faça um item da fila ser pulado.
+    const next = SC.reviewQueue(state).find((x) => !state.ui.queueDone.includes(`${x.kind}:${x.id}`));
     if (!next) { render(); toast('Revisões de hoje concluídas ✔'); return; }
-    state.ui.queueDone.push(next.id);
+    state.ui.queueDone.push(`${next.kind}:${next.id}`);
     openModal(next.kind === 'list' ? 'listRedo' : 'redo', { id: next.id, queue: true });
   }
   function startQueue() { state.ui.queueDone = []; nextInQueue(); }

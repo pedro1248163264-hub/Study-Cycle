@@ -1,5 +1,17 @@
 # Changelog
 
+## [v25] — Fila de revisão e reinício protegidos
+
+### Corrigido
+- A fila "Começar revisões" agora identifica itens por coleção + ID. Uma lista e uma questão com o mesmo ID não fazem uma delas ser pulada.
+- "Reiniciar ciclo" pede confirmação antes de zerar as horas concluídas de todas as matérias.
+
+### Arquivos
+`js/ui.js`, `js/main.js`.
+
+---
+
+
 ## [v24] — Agendamento individual sem efeito do atraso
 
 ### Corrigido
@@ -21,7 +33,8 @@ Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) con
 - Tela, modal e filtros do **Error Log** e o bloco "Causas dos erros" dos Simulados. `errorLogs` continua em `SYNCED` (legado, sem tela) para não apagar dados já salvos, como `topicReviews`.
 
 ### Adicionado
-- **Começar revisões** (`start-queue`): `SC.reviewQueue` (`logic.js`) devolve a fila de hoje misturada por matéria; os modais abertos por ela carregam `queue: true` e `commit` abre o próximo ao concluir (`nextInQueue`, `ui.js`). Fechar o modal encerra a rodada.
+- **Começar revisões** (`start-queue`): `SC.reviewQueue` (`logic.js`) devolve a fila de hoje misturada por matéria; os modais abertos por ela carregam `queue: true` e `commit` abre o próximo ao concluir (
+extInQueue`, `ui.js`). Fechar o modal encerra a rodada.
 
 ### Arquivos
 `js/screens.js`, `js/modals.js`, `js/store.js`, `js/logic.js`, `js/ui.js`, `js/main.js`, `css/styles.css`, `README.md`.
@@ -58,7 +71,8 @@ Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) con
 ## [v22] — Gabarito por exercício, "acertei com dificuldade" e correção do "Atrasada 11d"
 
 ### Corrigido
-- **"Atrasada 11d" logo depois de terminar a lista.** O vencimento da lista era o menor `nextReviewAt` entre *todos* os `items`, inclusive exercícios fora de "Quais revisar" ou que ficaram de fora da sessão de 10, com vencimento antigo. Ao abrir, a lista (que só olha o escopo) dizia que nada estava atrasado, mas o cartão mostrava o atraso. Agora `listNextAt(list)` (`logic.js`) calcula o vencimento só a partir dos exercícios que contam (escopo), ou "hoje" se sobrou exercício nunca feito; o cartão, a fila "Hoje", a ordenação e `pendingReviews` usam essa função, e listas antigas se corrigem sozinhas ao abrir.
+- **"Atrasada 11d" logo depois de terminar a lista.** O vencimento da lista era o menor 
+extReviewAt` entre *todos* os `items`, inclusive exercícios fora de "Quais revisar" ou que ficaram de fora da sessão de 10, com vencimento antigo. Ao abrir, a lista (que só olha o escopo) dizia que nada estava atrasado, mas o cartão mostrava o atraso. Agora `listNextAt(list)` (`logic.js`) calcula o vencimento só a partir dos exercícios que contam (escopo), ou "hoje" se sobrou exercício nunca feito; o cartão, a fila "Hoje", a ordenação e `pendingReviews` usam essa função, e listas antigas se corrigem sozinhas ao abrir.
 
 ### Adicionado
 - **Gabarito por exercício** (`list.answers = { "1": "C", "3a": "12" }`). Preenche em "Editar lista" (`1: C; 2: 42; 3a: Falso`) ou direto na tela "Refazer lista", no bloco **Gabarito** (um campo por exercício, salva na hora sem fechar, + campo rápido para itens com letra).
@@ -172,10 +186,12 @@ Este arquivo existe para que qualquer pessoa (ou qualquer IA, em outro chat) con
 - Mesmo com a matéria sem nenhum material ativo, as pendências de revisão aparecem abaixo do aviso "Nenhum material ativo".
 
 ### Regra de "pendente"
-Igual à da aba Revisão > Hoje: `nextReviewAt <= agora`. Questões graduadas (`retired`) não contam; listas nunca se aposentam. Itens sem matéria não entram em nenhuma contagem (o modal é por matéria).
+Igual à da aba Revisão > Hoje: 
+extReviewAt <= agora`. Questões graduadas (`retired`) não contam; listas nunca se aposentam. Itens sem matéria não entram em nenhuma contagem (o modal é por matéria).
 
 ### Arquivos
-`js/logic.js` (`pendingReviews`), `js/screens.js` (`pendingReviewCards`), `js/modals.js` (`nextMaterial`), `js/main.js` (ação `go-review`).
+`js/logic.js` (`pendingReviews`), `js/screens.js` (`pendingReviewCards`), `js/modals.js` (
+extMaterial`), `js/main.js` (ação `go-review`).
 
 ---
 
@@ -255,14 +271,16 @@ Pedido: deixar o site o mais eficiente possível, organizado, sem coisas inútei
 - **Ações**: `data-action` genérico (`modal`, `set`, `remove`, `patch`) no lugar de ~40 `case` de um `switch`. Um modal agora é uma entrada em `SC.modals`; uma tela, uma entrada em `SC.screens` (a aba de navegação nasce sozinha).
 - **Estado de edição**: 8 campos soltos (`editingLogId`, `editingErrorId`, `redoingQuestionId`, prefills…) viraram um só: `state.modal = { name, id, ...dados }`.
 - **Filtros**: uma barra de filtros e um `applyFilters` para as 4 listas (antes 4 cópias).
-- **Formulários**: `bindForm` cuida de habilitar/desabilitar Salvar, validação com mensagem, "Outra (digitar)", botões de escolha e campos condicionais; `readForm` lê tudo por `name`.
+- **Formulários**: `bindForm` cuida de habilitar/desabilitar Salvar, validação com mensagem, "Outra (digitar)", botões de escolha e campos condicionais; `readForm` lê tudo por 
+ame`.
 - **Cartões, abas, estados vazios, botões, seletor de matéria**: componentes únicos.
 - **SM-2**: `review()` único para tópico e questão; `esc()` agora também serve para atributos (some `escAttr`).
 
 ### Melhorias de uso
 - **Confirmação antes de excluir** erro, tópico, questão (com imagem/histórico) e matéria.
 - **Tema escuro sem "flash" branco** ao abrir (espelhado em `localStorage` e aplicado no `<head>`).
-- **`navigator.storage.persist()`**: pede ao navegador para não apagar seus dados quando faltar espaço (Safari limpa dados de sites sem uso).
+- **
+avigator.storage.persist()`**: pede ao navegador para não apagar seus dados quando faltar espaço (Safari limpa dados de sites sem uso).
 - IndexedDB: conexão aberta uma vez e reaproveitada (antes abria uma a cada salvamento).
 - Troca de ícone lua/sol feita só por CSS.
 
@@ -311,7 +329,8 @@ Faltava um jeito de guardar *como* resolver uma questão salva (só existia o ga
 - **Botão "Ver resolução" no modal "Refazer questão"** — só aparece se a questão tiver resolução salva (texto e/ou imagem), começa escondida a cada rodada nova (mesmo comportamento do "Ver gabarito", pra forçar a tentativa antes de espiar).
 
 ### Alterado
-- **`sm2Step`**: quando uma questão/tópico é avaliado com nota máxima (5 = "Fácil" no motor de Questão) logo na primeira rodada (`n === 0`), o próximo intervalo passa a ser **3 dias** em vez de 1. "Difícil" (nota 3) continua com 1 dia, e uma resposta errada continua reiniciando para 1 dia. Afeta os dois motores (Tópico e Questão), já que compartilham a mesma função.
+- **`sm2Step`**: quando uma questão/tópico é avaliado com nota máxima (5 = "Fácil" no motor de Questão) logo na primeira rodada (
+ === 0`), o próximo intervalo passa a ser **3 dias** em vez de 1. "Difícil" (nota 3) continua com 1 dia, e uma resposta errada continua reiniciando para 1 dia. Afeta os dois motores (Tópico e Questão), já que compartilham a mesma função.
 
 ### Não incluído (escopo desta versão)
 - Editar a resolução (ou qualquer outro campo) de uma questão já salva — mesma limitação que já existia para os demais campos.
@@ -327,7 +346,9 @@ Faltava um jeito de guardar *como* resolver uma questão salva (só existia o ga
 Dois problemas relatados na aba "Revisão de Questões": (1) toda questão nova salva já aparecia com o badge "Atrasada 1d", como se já estivesse vencida antes mesmo de existir; (2) não havia onde guardar a resposta correta de uma questão salva, então não dava pra se autotestar de verdade antes de refazer.
 
 ### Corrigido
-- **Bug do badge "Atrasada 1d" no nascimento**: `dueBadgeHtml` calculava dias vencidos com `Math.floor((nextReviewAt - Date.now()) / MS_PER_DAY)` usando os timestamps exatos (com hora, minuto, segundo, milissegundo). Uma questão recém-criada nasce com `nextReviewAt = now` (o exato instante da criação); no próximo render, alguns milissegundos já tinham passado, então `nextReviewAt - Date.now()` virava um número negativo pertinho de zero — e `Math.floor` de um negativo pertinho de zero arredonda pra `-1`, não pra `0`. Resultado: "Atrasada 1d" instantaneamente. Troquei por `calendarDayDiff`, que compara só a data (zera a hora dos dois lados antes de subtrair) — agora qualquer coisa vencendo hoje mostra "Hoje", não importa a hora exata. Afeta igualmente tópicos e questões, já que os dois usam a mesma função de badge.
+- **Bug do badge "Atrasada 1d" no nascimento**: `dueBadgeHtml` calculava dias vencidos com `Math.floor((nextReviewAt - Date.now()) / MS_PER_DAY)` usando os timestamps exatos (com hora, minuto, segundo, milissegundo). Uma questão recém-criada nasce com 
+extReviewAt = now` (o exato instante da criação); no próximo render, alguns milissegundos já tinham passado, então 
+extReviewAt - Date.now()` virava um número negativo pertinho de zero — e `Math.floor` de um negativo pertinho de zero arredonda pra `-1`, não pra `0`. Resultado: "Atrasada 1d" instantaneamente. Troquei por `calendarDayDiff`, que compara só a data (zera a hora dos dois lados antes de subtrair) — agora qualquer coisa vencendo hoje mostra "Hoje", não importa a hora exata. Afeta igualmente tópicos e questões, já que os dois usam a mesma função de badge.
 
 ### Adicionado
 - **Campo "Gabarito" ao salvar uma questão** — campo de texto livre (aceita letra, número, frase curta etc.), opcional, ao lado de enunciado/imagem no modal "Salvar questão".
