@@ -437,13 +437,22 @@
 
         <details class="redo-more" data-role="gab">
           <summary>Gabarito <span data-role="gab-count"></span></summary>
+          <label class="gab-find-label" for="f-gab-find">Ver a resposta de um exercício</label>
           <div class="list-score-add">
-            <input id="f-gab-add" class="text-input" type="text" autocomplete="off" placeholder="ex: 1: C; 3a: 12; 3b: Falso">
-            <button type="button" class="btn-chip" data-role="gab-add">Salvar</button>
+            <input id="f-gab-find" class="text-input" type="text" autocomplete="off" inputmode="text" enterkeyhint="search" placeholder="ex: 7, 23a ou 3, 8, 12b">
+            <button type="button" class="btn-chip" data-role="gab-find">Ver</button>
           </div>
-          <p class="field-help" data-role="gab-msg" role="alert" style="color:#E11D48;display:none"></p>
-          <div class="gab-grid" data-role="gab-grid"></div>
-          <p class="field-help">Salva na hora, junto da lista. Só aparecem os exercícios de “Quais revisar”. Para um item com letra que não está aqui (ex.: 3b), use o campo de cima.</p>
+          <div class="gab-result" data-role="gab-result" aria-live="polite"></div>
+          <details class="redo-more" data-role="gab-edit">
+            <summary>Editar gabarito</summary>
+            <div class="list-score-add">
+              <input id="f-gab-add" class="text-input" type="text" autocomplete="off" placeholder="ex: 1: C; 3a: 12; 3b: Falso">
+              <button type="button" class="btn-chip" data-role="gab-add">Salvar</button>
+            </div>
+            <p class="field-help" data-role="gab-msg" role="alert" style="color:#E11D48;display:none"></p>
+            <div class="gab-grid" data-role="gab-grid"></div>
+            <p class="field-help">Salva na hora, junto da lista. Só aparecem os exercícios de “Quais revisar”. Para um item com letra que não está aqui (ex.: 3b), use o campo de cima. Atenção: aqui as respostas ficam todas visíveis.</p>
+          </details>
         </details>
 
         <details class="redo-more">
@@ -646,8 +655,41 @@
         paintGab();
         {
           const g = q('[data-role="gab"]');
-          if (g && Object.keys(SC.visibleAnswers(cur())).length === 0) g.open = true; // sem gabarito ainda: já abre para você preencher
+          if (g && Object.keys(SC.visibleAnswers(cur())).length === 0) { // sem gabarito ainda: já abre para você preencher
+            g.open = true;
+            const ed = q('[data-role="gab-edit"]');
+            if (ed) ed.open = true;
+          }
         }
+
+        // Consulta: digita o exercício e só ele é revelado (nada de abrir o gabarito inteiro).
+        const gabFind = q('#f-gab-find'), gabResult = q('[data-role="gab-result"]');
+        function findGab() {
+          const text = gabFind.value;
+          if (!text.trim()) { gabResult.innerHTML = ''; return; }
+          const r = SC.parseExerciseKeys(text, total);
+          const vis = SC.visibleAnswers(cur());
+          const visKeys = Object.keys(vis).sort(SC.compareKeys);
+          const rows = [];
+          const seen = new Set();
+          const hit = (k) => { if (!seen.has(k)) { seen.add(k); rows.push(`<div class="gab-hit"><span class="gab-hit-key">${esc(k)}</span><span class="gab-hit-val">${esc(vis[k])}</span></div>`); } };
+          const miss = (label) => rows.push(`<div class="gab-miss"><span class="gab-miss-sign" aria-hidden="true">✕</span><span>Sem gabarito para <strong>${esc(label)}</strong></span></div>`);
+          r.keys.forEach((k) => {
+            if (vis[k]) { hit(k); return; }
+            if (!/[a-z]$/i.test(k)) { // "3" sozinho: mostra 3a, 3b… se for esse o caso
+              const subs = visKeys.filter((x) => parseInt(x, 10) === parseInt(k, 10));
+              if (subs.length) { subs.forEach(hit); return; }
+            }
+            miss(k);
+          });
+          if (r.invalid.length) miss(r.keys.length ? r.invalid.join(', ') : text.trim());
+          if (!rows.length) miss(text.trim());
+          gabResult.innerHTML = rows.join('');
+          gabFind.select();
+        }
+        q('[data-role="gab-find"]').addEventListener('click', findGab);
+        gabFind.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); findGab(); } });
+        gabFind.addEventListener('input', () => { gabResult.innerHTML = ''; }); // não deixa resposta velha na tela
 
         q('[data-role="add-wrong"]').addEventListener('click', add);
         numEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });

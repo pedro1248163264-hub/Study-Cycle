@@ -1,5 +1,16 @@
 # Changelog
 
+## [v26] — Consulta de gabarito por exercício
+
+### Alterado
+- Em "Refazer lista" > Gabarito, o gabarito não abre mais inteiro. Digite o exercício (ex.: `7`, `23a`, `3, 8, 12b`) e toque em "Ver" (ou Enter) para revelar só a resposta dele; sem gabarito cadastrado aparece um aviso de erro (✕). Número sozinho mostra também as letras (3a, 3b…).
+- A edição do gabarito (grade completa) fica em "Editar gabarito", recolhida por padrão.
+
+### Arquivos
+`js/modals.js`, `css/styles.css`.
+
+---
+
 ## [v25] — Fila de revisão e reinício protegidos
 
 ### Corrigido
