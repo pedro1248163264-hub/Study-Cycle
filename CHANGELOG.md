@@ -1,5 +1,17 @@
 # Changelog
 
+## [v27] — Lista sem "quantos exercícios"
+
+### Alterado
+- Removido o campo "Quantos exercícios a lista tem". Em Adicionar/Editar lista, o campo "Exercícios" tem uma linha por exercício (nº, resposta do gabarito, "Revisar"); uma linha nova aparece sozinha ao digitar, e "vários: 1-5; 7; 9a-c" cria várias de uma vez. Ordem livre, números podem ser pulados.
+- "Quais revisar" e o texto de gabarito foram substituídos por essas linhas. Dados novos: `list.keys` (exercícios cadastrados) e `list.answers`. Listas antigas (`total`/`reviewPick`) continuam funcionando e são convertidas ao salvar em Editar.
+- Refazer lista: removido "Fiz até o exercício" (dependia de ordem); ficou o botão "Salvar e continuar depois". Exercícios cadastrados depois entram como pendentes na lista.
+- Lista sem exercícios não vence nem aparece na fila.
+
+### Arquivos
+`js/logic.js`, `js/modals.js`, `js/screens.js`, `js/store.js`, `css/styles.css`, `README.md`.
+
+---
 ## [v26] — Consulta de gabarito por exercício
 
 ### Alterado

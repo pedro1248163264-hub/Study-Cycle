@@ -1760,3 +1760,13 @@ html.dark .gab-miss { background-color: rgba(225, 29, 72, 0.15); border-color: r
 #toast-root { position: fixed; left: 0; right: 0; bottom: calc(1rem + env(safe-area-inset-bottom)); display: flex; justify-content: center; z-index: 1000; pointer-events: none; }
 .toast { pointer-events: auto; display: flex; align-items: center; gap: 1rem; background: #1f2937; color: #fff; padding: 0.7rem 1rem; border-radius: 0.75rem; box-shadow: 0 8px 24px rgba(0,0,0,.25); font-size: 0.9rem; }
 .toast-undo { background: none; border: 0; color: #a5b4fc; font-weight: 600; cursor: pointer; font: inherit; font-weight: 600; }
+
+/* Editor de lista: uma linha por exercício (nº, resposta, revisar), criadas conforme você digita */
+.ex-rows { display: flex; flex-direction: column; gap: 0.375rem; margin: 0.625rem 0 0.25rem; max-height: 22rem; overflow-y: auto; }
+.ex-row { display: grid; grid-template-columns: 4.25rem minmax(0, 1fr) auto auto; gap: 0.375rem; align-items: center; }
+.ex-row .text-input { padding: 0.5rem 0.625rem; font-size: 0.9375rem; min-width: 0; }
+.ex-rev { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.8125rem; color: var(--muted-foreground); white-space: nowrap; cursor: pointer; }
+.ex-del { display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; border: 0; background: transparent; color: var(--muted-foreground); border-radius: var(--radius-lg); cursor: pointer; }
+.ex-del:hover { background-color: var(--muted); color: #E11D48; }
+.ex-row:last-child .ex-del { visibility: hidden; }
+@media (max-width: 30rem) { .ex-row { grid-template-columns: 3.5rem minmax(0, 1fr) auto auto; } .ex-rev span { display: none; } }

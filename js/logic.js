@@ -222,6 +222,7 @@
   const compareKeys = (a, b) => (keyNum(a) - keyNum(b)) || keyLetter(a).localeCompare(keyLetter(b));
 
   // Lê "3, 7, 23a, 23: a-b; 5-8; 22: e-g" e devolve { keys[], invalid[] }.
+  // `max` é opcional (sem ele, qualquer número ≥ 1 vale).
   // Aceita número, número+letra, intervalos de números (5-8) e de letras (a-c).
   function parseExerciseKeys(text, max) {
     const toks = [];
@@ -245,7 +246,7 @@
           for (let k = toks[i - 2].v + 1; k <= t.v && k - toks[i - 2].v < 200; k++) entry(k).whole = true;
           cur = t.v;
         } else { cur = t.v; entry(cur).whole = true; }
-        if (t.v < 1 || t.v > max) invalid.push(String(t.v));
+        if (t.v < 1 || (max && t.v > max)) invalid.push(String(t.v));
       } else if (t.t === 'l') {
         // "3 e 5": o "e" aqui é "e", não a letra e
         if (t.v === 'e' && prev && prev.t === 'n' && next && next.t === 'n') continue;
@@ -260,7 +261,7 @@
       } else if (t.t === 's') cur = null;
     }
     const keys = [];
-    Object.keys(found).map(Number).filter((n) => n >= 1 && n <= max).forEach((n) => {
+    Object.keys(found).map(Number).filter((n) => n >= 1 && (!max || n <= max)).forEach((n) => {
       const e = found[n];
       if (e.whole || !e.letters.size) keys.push(String(n));
       else e.letters.forEach((l) => keys.push(n + l));
@@ -268,13 +269,35 @@
     return { keys: keys.sort(compareKeys), invalid: Array.from(new Set(invalid)) };
   }
 
-  // "Quais revisar" delimita a lista: "1: a; 3; 11: b, c" => ["1a","3","11b","11c"].
-  // Vazio (ou texto livre com palavras, como "26 toda") = sem escopo: a lista toda.
+  // Os exercícios da lista são os que VOCÊ cadastrou (list.keys), em qualquer ordem e
+  // com buracos (pulou o 4? é só não cadastrar). Não existe "quantos exercícios a lista
+  // tem". Sempre devolve um array ordenado (vazio = lista sem exercícios ainda).
+  // Listas antigas (sem list.keys) são lidas do jeito que eram: "Quais revisar"
+  // (list.reviewPick, ex.: "1: a; 3; 11: b, c") ou, sem isso, de 1 até list.total.
   function listScope(list) {
+    if (Array.isArray(list.keys)) return list.keys.map(String).sort(compareKeys);
     const txt = String(list.reviewPick || '');
-    if (!txt.trim() || /[a-zA-Z]{2,}/.test(txt)) return null;
-    const keys = parseExerciseKeys(txt, list.total).keys;
-    return keys.length ? keys : null;
+    if (txt.trim() && !/[a-zA-Z]{2,}/.test(txt)) {
+      const keys = parseExerciseKeys(txt, Infinity).keys;
+      if (keys.length) return keys;
+    }
+    const total = parseInt(list.total, 10) || 0;
+    return Array.from({ length: total }, (_, i) => String(i + 1));
+  }
+
+  // "1, 2, 3, 4, 7, 9a" => "1–4, 7, 9a" (para mostrar no cartão).
+  function formatKeys(keys) {
+    const ks = keys.slice().sort(compareKeys);
+    const whole = (k) => !/[a-z]$/i.test(k);
+    const out = [];
+    for (let i = 0; i < ks.length;) {
+      if (!whole(ks[i])) { out.push(ks[i]); i++; continue; }
+      let j = i;
+      while (j + 1 < ks.length && whole(ks[j + 1]) && keyNum(ks[j + 1]) === keyNum(ks[j]) + 1) j++;
+      out.push(j - i >= 2 ? `${ks[i]}–${ks[j]}` : ks.slice(i, j + 1).join(', '));
+      i = j + 1;
+    }
+    return out.join(', ');
   }
 
   // Listas antigas sem estado por exercício só permitem recuperar o resultado
@@ -307,10 +330,9 @@
     // listas muito antigas podem não ter lastReviewedAt; o histórico sabe quando foi
     const reviewedAt = list.lastReviewedAt || (last && last.at) || 0;
     if (last && reviewedAt) {
-      const done = last.total || list.total;
+      const done = last.total || parseInt(list.total, 10) || Infinity;
       const wrong = (last.wrong || []).map(String);
-      const scope = listScope(list);
-      const universe = scope ? scope.filter((k) => keyNum(k) <= done) : Array.from({ length: done }, (_, i) => String(i + 1));
+      const universe = listScope(list).filter((k) => keyNum(k) <= done);
       const hard = new Set((last.hardKeys || []).map(String));
       for (const key of universe) {
         const wasWrong = wrong.includes(key) || wrong.includes(String(keyNum(key)));
@@ -332,22 +354,19 @@
   // O que fazer agora numa lista: vencidos + nunca feitos, errados primeiro.
   //  all   = tudo que está pendente, na ordem de prioridade
   //  today = só o que cabe no limite diário da lista (ou todos, se expand)
-  //  fresh = true quando a lista nunca foi feita (é a lista toda)
+  //  first = true quando a lista nunca foi revisada (faz tudo que cadastrou)
   function listDue(list, now, expand) {
     now = now || Date.now();
     const scope = listScope(list);
     const all0 = listItems(list);
-    // Só conta o que está em "Quais revisar" (se houver).
+    // Só conta o que está cadastrado na lista (o resto do histórico fica guardado).
     const items = {};
-    Object.keys(all0).forEach((k) => { if (!scope || scope.includes(k)) items[k] = all0[k]; });
+    Object.keys(all0).forEach((k) => { if (scope.includes(k)) items[k] = all0[k]; });
     const keys = Object.keys(items);
     const first = keys.length === 0;           // nunca revisada
-    const fresh = first && !scope;             // e sem escopo: é a lista toda
     const due = keys.filter((k) => items[k].nextReviewAt <= now);
-    // exercícios do escopo que nunca foram feitos
-    const untouched = [];
-    if (scope) scope.forEach((k) => { if (!items[k]) untouched.push(k); });
-    else if (!fresh) for (let k = 1; k <= list.total; k++) if (!keys.some((x) => keyNum(x) === k)) untouched.push(String(k));
+    // exercícios cadastrados que nunca foram feitos (inclui os adicionados depois)
+    const untouched = scope.filter((k) => !items[k]);
     const prio = (k) => (items[k] ? (items[k].n === 0 ? 0 : 1) : 2);
     const all = due.concat(untouched).sort((a, b) => (prio(a) - prio(b))
       || ((items[a] ? items[a].nextReviewAt : 0) - (items[b] ? items[b].nextReviewAt : 0)) || compareKeys(a, b));
@@ -365,7 +384,7 @@
     const quota = Math.max(0, limit - doneToday);
     const pick = (expand || first) ? all : (early ? all.slice(0, limit) : all.slice(0, quota));
     const today = pick.slice().sort(compareKeys);
-    return { fresh, first, early, scope, all, lapsed, today, items, limit, doneToday, quota };
+    return { first, early, scope, all, lapsed, today, items, limit, doneToday, quota };
   }
 
   // Rótulo do exercício: "23a" fica "23a"; o resto do 23 vira "23 (restante)".
@@ -375,7 +394,7 @@
     return hasParts ? `${key} (restante)` : key;
   }
 
-  // Fecha uma sessão: `session` = { keys[] (o que estava na sessão), wrong[], hardKeys[], upTo }
+  // Fecha uma sessão: `session` = { keys[] (o que estava na sessão), wrong[], hardKeys[] }
   //  - wrong: errou -> volta amanhã
   //  - hardKeys: acertou, mas com dificuldade -> 2 dias
   //  - o resto da sessão: acertou tranquilo -> 5 dias
@@ -415,7 +434,7 @@
     const scope = listScope(list);
     const load = {};
     Object.keys(items).forEach((k) => {
-      if (targets.includes(k) || (scope && !scope.includes(k))) return;
+      if (targets.includes(k) || !scope.includes(k)) return;
       const day = calendarDayDiff(items[k].nextReviewAt, now);
       load[day] = (load[day] || 0) + 1;
     });
@@ -439,7 +458,6 @@
     Object.keys(items).forEach((k) => { if (/[a-z]$/i.test(k) && wrongNums.has(keyNum(k)) && !targets.includes(k)) delete items[k]; });
     const entry = {
       at: now, correct: right, total: right + wrong.length, wrong: wrong.slice().sort(compareKeys),
-      upTo: session.upTo || undefined,
       hardKeys: hardKeys.length ? hardKeys.slice().sort(compareKeys) : undefined,
       hard: hardCount > 0 || undefined,
       result: wrong.length === 0 ? (hardCount > 0 ? 'hard' : 'easy') : (wrong.length > (right + wrong.length) / 2 ? 'wrong' : 'hard'),
@@ -452,15 +470,16 @@
   }
 
   // Quando a lista vence: o MENOR vencimento entre os exercícios que contam hoje
-  // (dentro de "Quais revisar"), ou agora se sobrou exercício nunca feito.
+  // (os cadastrados na lista), ou agora se sobrou exercício nunca feito.
   // É calculado a partir dos exercícios, nunca copiado de um valor antigo: antes,
   // exercícios fora do escopo (ou que não entraram na sessão de 10) com vencimento
   // velho puxavam a lista para "Atrasada 11d" mesmo sem nada vencido ao abrir.
   function listNextAt(list, now) {
     now = now || Date.now();
     const scope = listScope(list);
+    if (!scope.length) return 0; // lista sem exercícios: nada a revisar (0 = sem data)
     const items = listItems(list);
-    const keys = Object.keys(items).filter((k) => !scope || scope.includes(k));
+    const keys = Object.keys(items).filter((k) => scope.includes(k));
     if (!keys.length) return list.nextReviewAt || now; // nunca revisada
     const d = listDue(list, now);
     // Tem coisa vencida/nunca feita, mas o limite de hoje já foi usado: só amanhã.
@@ -470,23 +489,12 @@
   }
 
   // ---------- GABARITO POR EXERCÍCIO ----------
-  // list.answers = { "1": "C", "3a": "12" }, mesma chave dos exercícios.
-  // Fica atrelado a "Quais revisar": o gabarito de um exercício fora do escopo não
-  // aparece (e não conta), mas continua guardado — se ele voltar ao escopo, o gabarito
-  // volta. Apagar um gabarito nunca tira o exercício da revisão.
-  function answerVisible(key, scope) {
-    if (!scope) return true;
-    if (scope.includes(key)) return true;
-    const num = keyNum(key);
-    if (/[a-z]$/i.test(key)) return scope.some((x) => !/[a-z]$/i.test(x) && keyNum(x) === num); // 3a com "3" inteiro no escopo
-    return scope.some((x) => keyNum(x) === num); // "3" com 3a/3b no escopo
-  }
-
+  // list.answers = { "1": "C", "3a": "12" }, mesma chave dos exercícios. Vale para
+  // qualquer exercício com resposta preenchida, esteja ele em revisão ou não.
   function visibleAnswers(list) {
-    const scope = listScope(list);
     const out = {};
     Object.keys(list.answers || {}).forEach((k) => {
-      if (String(list.answers[k]).trim() && answerVisible(k, scope)) out[k] = list.answers[k];
+      if (String(list.answers[k]).trim()) out[k] = list.answers[k];
     });
     return out;
   }
@@ -499,7 +507,7 @@
       const m = /^\s*(\d+)\s*[.)\-]?\s*([a-zA-Z])?\s*[:=]\s*([\s\S]*)$/.exec(chunk);
       if (!m) { invalid.push(chunk.trim().slice(0, 20)); return; }
       const n = parseInt(m[1], 10);
-      if (n < 1 || n > max) { invalid.push(m[1] + (m[2] || '')); return; }
+      if (n < 1 || (max && n > max)) { invalid.push(m[1] + (m[2] || '')); return; }
       const val = m[3].trim().slice(0, 200);
       if (val) answers[n + (m[2] ? m[2].toLowerCase() : '')] = val;
     });
@@ -538,7 +546,7 @@
     now = now || Date.now();
     const due = (x) => x.subject === subject && x.nextReviewAt && x.nextReviewAt <= now;
     return {
-      lists: state.exerciseLists.filter((l) => l.subject === subject && listNextAt(l, now) <= now).length,
+      lists: state.exerciseLists.filter((l) => l.subject === subject && listNextAt(l, now) && listNextAt(l, now) <= now).length,
       questions: state.questionBank.filter((q) => !q.retired && due(q)).length,
     };
   }
@@ -564,7 +572,7 @@
   Object.assign(SC, {
     calculateAllocations, generateSequence, getDerived,
     GRADUATE_AFTER_N, sm2Step, applyQuestionRedo, applyListSession,
-    SESSION_MAX, dailyLimit, MAX_INTERVAL_DAYS, parseExerciseKeys, listScope, listItems, listDue, listNextAt, keyLabel, compareKeys,
+    SESSION_MAX, dailyLimit, MAX_INTERVAL_DAYS, parseExerciseKeys, listScope, formatKeys, listItems, listDue, listNextAt, keyLabel, compareKeys,
     visibleAnswers, parseAnswers, serializeAnswers,
     interleaveBySubject, reviewQueue, pendingReviews, calendarDayDiff, formatDate,
   });

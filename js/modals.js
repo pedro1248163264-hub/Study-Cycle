@@ -232,24 +232,49 @@
   const MAX_PDF_MB = 25;
   const fmtSize = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');
 
+  const exRow = (r) => {
+    r = r || { key: '', ans: '', rev: true };
+    return `<div class="ex-row" data-ex-row>
+      <input class="text-input ex-key" type="text" data-ex="key" maxlength="6" autocomplete="off" autocapitalize="off" placeholder="Nº" aria-label="Exercício" value="${esc(r.key)}">
+      <input class="text-input ex-ans" type="text" data-ex="ans" maxlength="200" autocomplete="off" placeholder="Resposta (gabarito)" aria-label="Resposta do gabarito" value="${esc(r.ans)}">
+      <label class="ex-rev"><input type="checkbox" data-ex="rev"${r.rev ? ' checked' : ''}><span>Revisar</span></label>
+      <button type="button" class="ex-del" data-ex="del" aria-label="Remover exercício">${icon('x', true)}</button>
+    </div>`;
+  };
+  // "07" => "7", "23A" => "23a"; null se não for número (+ letra opcional).
+  const normKey = (t) => { const m = /^\s*(\d+)\s*([a-zA-Z])?\s*$/.exec(t); return m && parseInt(m[1], 10) >= 1 ? parseInt(m[1], 10) + (m[2] || '').toLowerCase() : null; };
+
   SC.modals.exerciseList = (m) => {
     const l = m.id ? col.find('exerciseLists', m.id) : null;
     if (m.id && !l) return null;
     const id = l ? l.id : uid();
+    // Linhas do editor: um exercício por linha (nº, resposta, entra na revisão?).
+    // Sem total: o que você cadastra é o que existe, em qualquer ordem e com buracos.
+    const scope = l ? SC.listScope(l) : [];
+    const ans = l ? SC.visibleAnswers(l) : {};
+    const rows = Array.from(new Set(scope.concat(Object.keys(ans)))).sort(SC.compareKeys)
+      .map((k) => ({ key: k, ans: ans[k] || '', rev: scope.includes(k) }));
     return {
       title: l ? 'Editar lista' : 'Adicionar lista de exercícios',
       body: `
         ${inputField({ name: 'name', label: 'Nome da lista', value: l ? l.name : '', placeholder: 'ex: Lista 3 — Cinemática', bold: true })}
         ${subjectField({ label: 'Matéria (opcional)', value: l ? l.subject || '' : '', none: 'Sem matéria' })}
-        ${inputField({ name: 'total', label: 'Quantos exercícios a lista tem', type: 'number', value: l ? l.total : '', placeholder: 'ex: 30', attrs: 'min="1"' })}
         ${inputField({ name: 'dailyLimit', label: 'Limite por dia (opcional)', type: 'number', value: l && l.dailyLimit ? l.dailyLimit : '', placeholder: 'padrão: ' + SC.SESSION_MAX, attrs: 'min="1"', help: 'Quantos exercícios desta lista aparecem por dia na revisão. O que passar disso fica para os próximos dias (os errados vêm primeiro).' })}
         <div class="field">
           <label>PDF da lista (opcional)</label>
           <div data-pdf-area></div>
           <p class="field-help">Vai direto para a nuvem (precisa de internet e da senha de sincronização) e não fica salvo no aparelho: abre em qualquer um, baixando só na hora de ver. Máx. ${MAX_PDF_MB} MB.</p>
         </div>
-        ${inputField({ name: 'reviewPick', label: 'Quais revisar (opcional)', value: l ? l.reviewPick || '' : '', rows: 2, placeholder: 'ex: 1: a, c; 2; 3: b', help: 'Só estes exercícios entram na revisão. Número sozinho = o exercício inteiro; com letras = só aqueles itens. Separe com “;”. Vazio = a lista toda.' })}
-        ${inputField({ name: 'answersText', label: 'Gabarito (opcional)', value: l ? SC.serializeAnswers(l.answers) : '', rows: 3, placeholder: 'ex: 1: C; 2: 42; 3a: Falso; 3b: 0,5', help: 'Um por exercício, separados por “;”. Só aparece o gabarito dos exercícios de “Quais revisar” (os outros ficam guardados e voltam se você os incluir de novo). Você também pode ir preenchendo na hora de refazer a lista.' })}
+        <div class="field">
+          <label>Exercícios</label>
+          <div class="list-score-add">
+            <input class="text-input" type="text" data-ex-quick autocomplete="off" placeholder="vários: 1-5; 7; 9a-c">
+            <button type="button" class="btn-chip" data-ex-quick-add>Adicionar</button>
+          </div>
+          <p class="field-help" data-ex-quick-msg role="alert" style="color:#E11D48;display:none"></p>
+          <div class="ex-rows" data-ex-rows>${rows.map(exRow).join('')}${exRow()}</div>
+          <p class="field-help">Digite o número do exercício (7, 23a) e a resposta do gabarito, se tiver. Uma linha nova aparece sozinha e não precisa seguir a ordem: pule o que não fez. “Revisar” marcado = entra na fila de revisão; desmarcado = guarda só a resposta no gabarito.</p>
+        </div>
         ${inputField({ name: 'notes', label: 'Observações (opcional)', value: l ? l.notes || '' : '', rows: 3, placeholder: 'Onde está a lista, página, link…' })}
         ${l ? '' : '<p class="field-help">A lista entra na fila de hoje. Depois de refazê-la, o app pergunta como foi e agenda a próxima vez.</p>'}
         ${formActions({ save: l ? 'Salvar alterações' : 'Adicionar lista' })}`,
@@ -258,6 +283,72 @@
         let removed = false;                // PDF atual marcado para remoção
         let form;
         const area = document.querySelector('[data-pdf-area]');
+        const rowsEl = document.querySelector('[data-ex-rows]');
+        const quickEl = document.querySelector('[data-ex-quick]');
+        const quickMsg = document.querySelector('[data-ex-quick-msg]');
+
+        // Lê as linhas do editor (a tela é a fonte da verdade).
+        function readRows() {
+          return Array.from(rowsEl.querySelectorAll('[data-ex-row]')).map((el) => ({
+            el,
+            raw: el.querySelector('[data-ex="key"]').value.trim(),
+            ans: el.querySelector('[data-ex="ans"]').value.trim(),
+            rev: el.querySelector('[data-ex="rev"]').checked,
+          }));
+        }
+        // Sempre sobra uma linha em branco no fim: ao digitar nela, outra aparece.
+        function ensureBlank() {
+          const all = rowsEl.querySelectorAll('[data-ex-row]');
+          const last = all[all.length - 1];
+          if (!last || last.querySelector('[data-ex="key"]').value.trim()) rowsEl.insertAdjacentHTML('beforeend', exRow());
+        }
+        // Resultado das linhas: { keys[], answers{}, errors[] }
+        function collect() {
+          const keys = new Set(), answers = {}, errors = [];
+          readRows().forEach((r) => {
+            if (!r.raw && !r.ans) return;
+            const k = normKey(r.raw);
+            if (!k) { errors.push(r.raw ? `“${r.raw}”` : `(sem número, resposta “${r.ans.slice(0, 12)}”)`); return; }
+            if (r.rev) keys.add(k);
+            if (r.ans) answers[k] = r.ans;
+          });
+          return { keys: Array.from(keys).sort(SC.compareKeys), answers, errors };
+        }
+        rowsEl.addEventListener('input', ensureBlank);
+        rowsEl.addEventListener('click', (e) => {
+          const b = e.target.closest('[data-ex="del"]');
+          if (!b) return;
+          b.closest('[data-ex-row]').remove();
+          ensureBlank();
+          form.sync();
+        });
+        rowsEl.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter' || !e.target.matches('[data-ex="key"], [data-ex="ans"]')) return;
+          e.preventDefault();
+          const row = e.target.closest('[data-ex-row]');
+          if (e.target.matches('[data-ex="key"]')) { row.querySelector('[data-ex="ans"]').focus(); return; }
+          if (!row.nextElementSibling) { ensureBlank(); }
+          const next = row.nextElementSibling;
+          if (next) next.querySelector('[data-ex="key"]').focus();
+        });
+        // Vários de uma vez: "1-5; 7; 9a-c" vira uma linha por exercício (sem repetir os que já existem).
+        function quickAdd() {
+          const r = SC.parseExerciseKeys(quickEl.value);
+          const say = (t) => { quickMsg.textContent = t; quickMsg.style.display = t ? '' : 'none'; };
+          if (r.invalid.length) { say(`Não entendi: ${r.invalid.join(', ')}. Use por exemplo 1-5; 7; 9a-c.`); return; }
+          if (!r.keys.length) { say('Digite os números, por exemplo 1-5; 7; 9a-c.'); return; }
+          say('');
+          const have = new Set(readRows().map((x) => normKey(x.raw)));
+          const last = rowsEl.lastElementChild;
+          if (last && !last.querySelector('[data-ex="key"]').value.trim() && !last.querySelector('[data-ex="ans"]').value.trim()) last.remove();
+          r.keys.filter((k) => !have.has(k)).forEach((k) => rowsEl.insertAdjacentHTML('beforeend', exRow({ key: k, ans: '', rev: true })));
+          ensureBlank();
+          quickEl.value = '';
+          form.sync();
+          quickEl.focus();
+        }
+        document.querySelector('[data-ex-quick-add]').addEventListener('click', quickAdd);
+        quickEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); quickAdd(); } });
 
         function showArea() {
           const cur = pending ? { name: pending.name, size: pending.size } : (!removed && l && l.pdf) || null;
@@ -280,12 +371,14 @@
 
         form = bindForm({
           validate(v) {
-            if (!(v.name.length > 0 && int(v.total) > 0)) return false;
-            const bad = SC.parseAnswers(v.answersText, int(v.total)).invalid;
-            return bad.length ? `Não entendi no gabarito: ${bad.join(', ')}. Use o formato “1: C; 3a: 12” (o exercício vai de 1 a ${int(v.total)}).` : true;
+            if (!v.name.length) return false;
+            const bad = collect().errors;
+            return bad.length ? `Número de exercício inválido: ${bad.join(', ')}. Use só o número, com letra se for item (7, 23a).` : true;
           },
           onSave(v) {
-            const fields = { name: v.name, subject: v.subject, total: int(v.total), reviewPick: v.reviewPick, dailyLimit: int(v.dailyLimit) || null, notes: v.notes, answers: SC.parseAnswers(v.answersText, int(v.total)).answers };
+            const c = collect();
+            // total/reviewPick são do formato antigo: saem de vez ao salvar.
+            const fields = { name: v.name, subject: v.subject, keys: c.keys, answers: c.answers, total: undefined, reviewPick: undefined, dailyLimit: int(v.dailyLimit) || null, notes: v.notes };
             const oldPath = l && l.pdf && l.pdf.path;
             const saveBtn = form.root.querySelector('[data-save]');
             const finish = (pdf) => commit(() => {
@@ -319,6 +412,7 @@
           },
         });
         showArea();
+        ensureBlank();
       },
     };
   };
@@ -404,7 +498,7 @@
         <div class="redo-main">
         <div class="redo-head">
           <p class="redo-name">${esc(l.name)}</p>
-          <p class="field-help">${esc([l.subject, SC.listScope(l) ? `${SC.listScope(l).length} em “Quais revisar”` : plural(l.total, 'exercício', 'exercícios'), `revisão nº ${(l.history || []).length + 1}`].filter(Boolean).join(' · '))}</p>
+          <p class="field-help">${esc([l.subject, plural(SC.listScope(l).length, 'exercício', 'exercícios'), `revisão nº ${(l.history || []).length + 1}`].filter(Boolean).join(' · '))}</p>
           ${lastLine ? `<p class="field-help">${esc(lastLine)}</p>` : ''}
         </div>
 
@@ -451,19 +545,8 @@
             </div>
             <p class="field-help" data-role="gab-msg" role="alert" style="color:#E11D48;display:none"></p>
             <div class="gab-grid" data-role="gab-grid"></div>
-            <p class="field-help">Salva na hora, junto da lista. Só aparecem os exercícios de “Quais revisar”. Para um item com letra que não está aqui (ex.: 3b), use o campo de cima. Atenção: aqui as respostas ficam todas visíveis.</p>
+            <p class="field-help">Salva na hora, junto da lista. Aparecem os exercícios da lista e os que já têm resposta. Para um que não está aqui (ex.: 3b), use o campo de cima. Atenção: aqui as respostas ficam todas visíveis.</p>
           </details>
-        </details>
-
-        <details class="redo-more">
-          <summary>Não fez tudo?</summary>
-          <div class="field">
-            <label for="f-upto">Fiz até o exercício</label>
-            <input id="f-upto" name="upto" class="text-input" type="number" inputmode="numeric" min="1" max="${l.total}" placeholder="vazio = tudo acima" value="${l.progress ? l.progress.upTo : ''}">
-            <p class="field-help">“Concluir” avalia só até aí; o resto continua pendente. Marcar um exercício como errado já conta como feito até ele.</p>
-          </div>
-          <button type="button" class="btn-chip" data-role="save-progress">${icon('check', true)}Salvar e continuar depois</button>
-          <p class="field-help" data-role="progress-msg" role="alert" style="color:#E11D48;display:none"></p>
         </details>
 
         ${notes ? `<details class="redo-more"><summary>Anotações da lista</summary>${notes}</details>` : ''}
@@ -471,6 +554,8 @@
         <div class="redo-footer">
           <p class="redo-summary" data-role="summary"></p>
           <button type="button" class="btn-primary-block" data-role="finish">Concluir revisão</button>
+          <button type="button" class="btn-secondary-block" data-role="save-progress">Salvar e continuar depois</button>
+          <p class="field-help" data-role="progress-msg" role="alert" style="color:#E11D48;display:none"></p>
           <button type="button" class="btn-secondary-block" data-action="close-modal">Cancelar</button>
         </div>
         </div>
@@ -484,43 +569,30 @@
         const dueEl = q('[data-role="due"]'), chipsEl = q('[data-role="wrong-chips"]'), numEl = q('#f-wrong-num');
         const hardEl = q('#f-hard-num'), hardMsg = q('[data-role="hard-msg"]'), hardChipsEl = q('[data-role="hard-chips"]');
         const wrongMsg = q('[data-role="wrong-msg"]'), progMsg = q('[data-role="progress-msg"]');
-        const upEl = q('#f-upto'), sumEl = q('[data-role="summary"]');
-        const total = l.total;
+        const sumEl = q('[data-role="summary"]');
         const prog = l.progress || null;
         let wrong = prog ? (prog.wrong || []).map(String) : [];
         let hardKeys = prog ? (prog.hardKeys || []).map(String) : [];
         let expand = false;
         const cur = () => col.find('exerciseLists', l.id) || l; // versão mais nova (o gabarito é salvo na hora)
         const say = (el, text) => { el.textContent = text || ''; el.style.display = text ? '' : 'none'; };
-        const limit = () => { const u = parseInt(upEl.value, 10); return u >= 1 && u <= total ? u : total; };
-        // Marcar uma questão como errada = você já fez tudo até ela: se "Fiz até" estiver
-        // preenchido com um número menor, ele sobe sozinho (vazio = lista toda, nada a mudar).
-        const raiseUpTo = (keys) => {
-          if (upEl.value === '') return;
-          const top = Math.max.apply(null, keys.map((k) => parseInt(k, 10)).concat([0]));
-          if (top > limit()) upEl.value = top;
-        };
         const due = () => SC.listDue(l, Date.now(), expand);
-        // exercícios que esta sessão cobre (respeitando "fiz até")
-        const sessionKeys = () => {
-          const d = due();
-          if (d.fresh) return Array.from({ length: limit() }, (_, i) => String(i + 1));
-          return d.today.filter((k) => parseInt(k, 10) <= limit());
-        };
+        // exercícios que esta sessão cobre
+        const sessionKeys = () => due().today;
 
         function paintDue() {
           const d = due();
-          const keys = d.fresh ? Array.from({ length: total }, (_, i) => String(i + 1)) : d.today;
+          const keys = d.today;
           const lap = new Set(d.lapsed);
           const chip = (k) => {
             const on = wrong.includes(k), hd = hardKeys.includes(k);
-            return `<button type="button" class="due-chip${lap.has(k) ? ' is-lapsed' : ''}${on ? ' is-wrong' : ''}${hd ? ' is-hard' : ''}${parseInt(k, 10) > limit() ? ' is-later' : ''}" data-k="${esc(k)}" aria-pressed="${on || hd}" aria-label="${esc(SC.keyLabel(k, d.items))}${on ? ' (errado)' : hd ? ' (com dificuldade)' : ''}">${esc(SC.keyLabel(k, d.items))}</button>`;
+            return `<button type="button" class="due-chip${lap.has(k) ? ' is-lapsed' : ''}${on ? ' is-wrong' : ''}${hd ? ' is-hard' : ''}" data-k="${esc(k)}" aria-pressed="${on || hd}" aria-label="${esc(SC.keyLabel(k, d.items))}${on ? ' (errado)' : hd ? ' (com dificuldade)' : ''}">${esc(SC.keyLabel(k, d.items))}</button>`;
           };
-          const head = d.first
-            ? (d.scope
-              ? `<p class="redo-fresh">Primeira vez: os ${d.scope.length} itens de “Quais revisar”</p>`
-              : `<p class="redo-fresh">Primeira vez: a lista toda <span>(1 a ${limit()})</span></p>`)
-            : (d.early ? '<p class="field-help">Nada venceu ainda. Estes são os próximos a vencer.</p>' : '');
+          const head = !d.scope.length
+            ? '<p class="field-help">Esta lista ainda não tem exercícios. Toque em “Editar” na lista para cadastrá-los.</p>'
+            : d.first
+              ? `<p class="redo-fresh">Primeira vez: ${plural(d.scope.length, 'exercício', 'exercícios')} da lista <span>(${esc(SC.formatKeys(d.scope))})</span></p>`
+              : (d.early ? '<p class="field-help">Nada venceu ainda. Estes são os próximos a vencer.</p>' : '');
           const hidden = d.first ? 0 : d.all.length - d.today.length;
           const capNote = (!d.first && !d.early && d.all.length > 0 && d.quota === 0 && !expand)
             ? `<p class="field-help">Limite de hoje atingido (${d.limit} por dia nesta lista). O resto fica para amanhã.</p>`
@@ -544,7 +616,7 @@
           // tranquilo -> errou -> com dificuldade -> tranquilo
           if (wrong.includes(k)) { wrong = wrong.filter((x) => x !== k); hardKeys.push(k); hardKeys.sort(SC.compareKeys); }
           else if (hardKeys.includes(k)) hardKeys = hardKeys.filter((x) => x !== k);
-          else { wrong.push(k); wrong.sort(SC.compareKeys); raiseUpTo([k]); }
+          else { wrong.push(k); wrong.sort(SC.compareKeys); }
           paint();
         });
 
@@ -560,22 +632,20 @@
             ? `${right} certas${hardKeys.length ? ` (${hardKeys.length} com dificuldade)` : ''} · ${wrong.length} ${wrong.length === 1 ? 'errada' : 'erradas'}` : '';
         }
 
-        // Lê o texto digitado (respeitando “Quais revisar”) e devolve as chaves válidas.
+        // Lê o texto digitado e devolve as chaves válidas (só exercícios cadastrados na lista).
         function parseInput(text, msgEl) {
           say(msgEl, '');
-          const r = SC.parseExerciseKeys(text, total);
+          const r = SC.parseExerciseKeys(text);
           const scope = SC.listScope(l);
-          if (scope) { // número sozinho = todos os itens daquele número no escopo
-            const out = [];
-            r.keys.forEach((k) => {
-              if (scope.includes(k)) out.push(k);
-              else if (!/[a-z]$/i.test(k) && scope.some((x) => parseInt(x, 10) === +k)) scope.filter((x) => parseInt(x, 10) === +k).forEach((x) => out.push(x));
-              else r.invalid.push(k);
-            });
-            r.keys = out;
-          }
+          const out = []; // número sozinho = todos os itens daquele número na lista
+          r.keys.forEach((k) => {
+            if (scope.includes(k)) out.push(k);
+            else if (!/[a-z]$/i.test(k) && scope.some((x) => parseInt(x, 10) === +k)) scope.filter((x) => parseInt(x, 10) === +k).forEach((x) => out.push(x));
+            else r.invalid.push(k);
+          });
+          r.keys = out;
           if (!r.keys.length && !r.invalid.length) say(msgEl, 'Digite o número (e a letra, se tiver): 3; 7; 23a; 23: a-b.');
-          else if (r.invalid.length) say(msgEl, scope ? `Fora de “Quais revisar”: ${r.invalid.join(', ')}.` : `Não entendi: ${r.invalid.join(', ')}. A lista vai de 1 a ${total}.`);
+          else if (r.invalid.length) say(msgEl, `Não está na lista: ${r.invalid.join(', ')}. Cadastre em “Editar”.`);
           return r;
         }
 
@@ -586,7 +656,6 @@
             hardKeys = hardKeys.filter((x) => x !== k); // errado e “com dificuldade” ao mesmo tempo não existe
           });
           wrong.sort(SC.compareKeys);
-          raiseUpTo(r.keys);
           numEl.value = r.invalid.join(', ');
           paint();
           numEl.focus();
@@ -599,7 +668,6 @@
             if (!hardKeys.includes(k)) hardKeys.push(k);
           });
           hardKeys.sort(SC.compareKeys);
-          raiseUpTo(r.keys);
           hardEl.value = r.invalid.join(', ');
           paint();
           hardEl.focus();
@@ -621,8 +689,7 @@
           const list = cur();
           const vis = SC.visibleAnswers(list);
           const scope = SC.listScope(list);
-          const base = scope || (total <= 120 ? Array.from({ length: total }, (_, i) => String(i + 1)) : []);
-          const keys = Array.from(new Set(base.concat(Object.keys(vis)))).sort(SC.compareKeys);
+          const keys = Array.from(new Set(scope.concat(Object.keys(vis)))).sort(SC.compareKeys);
           const n = Object.keys(vis).length;
           gabCount.textContent = n ? `(${n} preenchido${n === 1 ? '' : 's'})` : '';
           gabGrid.innerHTML = keys.map((k) => `
@@ -640,12 +707,11 @@
           gabCount.textContent = n ? `(${n} preenchido${n === 1 ? '' : 's'})` : '';
         });
         function addGab() {
-          const r = SC.parseAnswers(gabAdd.value, total);
-          if (r.invalid.length) { say(gabMsg, `Não entendi: ${r.invalid.join(', ')}. Use “1: C; 3a: 12” (exercícios de 1 a ${total}).`); return; }
+          const r = SC.parseAnswers(gabAdd.value);
+          if (r.invalid.length) { say(gabMsg, `Não entendi: ${r.invalid.join(', ')}. Use “1: C; 3a: 12”.`); return; }
           if (!Object.keys(r.answers).length) { say(gabMsg, 'Digite no formato “1: C; 3a: 12”.'); return; }
           saveAnswers(Object.assign({}, cur().answers || {}, r.answers));
-          const hidden = Object.keys(r.answers).filter((k) => !SC.visibleAnswers(cur())[k]);
-          say(gabMsg, hidden.length ? `Guardado, mas não aparece agora (fora de “Quais revisar”): ${hidden.join(', ')}.` : '');
+          say(gabMsg, '');
           gabAdd.value = '';
           paintGab();
           gabAdd.focus();
@@ -667,7 +733,7 @@
         function findGab() {
           const text = gabFind.value;
           if (!text.trim()) { gabResult.innerHTML = ''; return; }
-          const r = SC.parseExerciseKeys(text, total);
+          const r = SC.parseExerciseKeys(text);
           const vis = SC.visibleAnswers(cur());
           const visKeys = Object.keys(vis).sort(SC.compareKeys);
           const rows = [];
@@ -699,26 +765,17 @@
           wrong = wrong.filter((k) => k !== b.dataset.k);
           paint();
         });
-        upEl.addEventListener('change', () => {
-          if (upEl.value !== '') upEl.value = limit();
-          wrong = wrong.filter((k) => parseInt(k, 10) <= limit());
-          hardKeys = hardKeys.filter((k) => parseInt(k, 10) <= limit());
-          paint();
-        });
-
         q('[data-role="save-progress"]').addEventListener('click', () => {
-          const upTo = parseInt(upEl.value, 10);
-          if (!(upTo >= 1 && upTo <= total)) { say(progMsg, `Preencha “Fiz até o exercício” (de 1 a ${total}).`); upEl.focus(); return; }
+          if (!wrong.length && !hardKeys.length) { say(progMsg, 'Marque ao menos um exercício (errou ou com dificuldade) para guardar.'); return; }
           say(progMsg, '');
-          commit(() => col.patch('exerciseLists', l.id, { progress: { upTo, wrong: wrong.slice(), hardKeys: hardKeys.slice(), at: Date.now() } }));
+          commit(() => col.patch('exerciseLists', l.id, { progress: { wrong: wrong.slice(), hardKeys: hardKeys.slice(), at: Date.now() } }));
         });
 
         q('[data-role="finish"]').addEventListener('click', () => {
           const keys = sessionKeys();
           if (!keys.length && !wrong.length) { say(wrongMsg, 'Não há exercícios nesta sessão.'); return; }
-          const upTo = parseInt(upEl.value, 10);
           commit(() => col.put('exerciseLists', SC.applyListSession(cur(), {
-            keys, wrong: wrong.slice(), hardKeys: hardKeys.slice(), upTo: upTo >= 1 && upTo < total ? upTo : null,
+            keys, wrong: wrong.slice(), hardKeys: hardKeys.slice(),
           })));
         });
 

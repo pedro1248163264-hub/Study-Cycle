@@ -247,6 +247,7 @@
     const lastText = last ? `última vez (${formatDate(l.lastReviewedAt)})${scoreText(last)}` : 'ainda não revisada';
     const d = SC.listDue(l);
     const nAns = Object.keys(SC.visibleAnswers(l)).length;
+    const scope = SC.listScope(l), nEx = scope.length;
     const todo = !last || d.early || !d.all.length ? ''
       : (d.today.length < d.all.length
         ? (d.today.length ? `${d.today.length} hoje (${d.all.length} vencidos, limite ${d.limit}/dia)` : `${d.all.length} vencidos · limite de hoje já feito`)
@@ -255,8 +256,8 @@
       main: cardMain({
         meta,
         title: l.name,
-        detail: [l.subject, plural(l.total, 'exercício', 'exercícios'), todo, l.progress ? `parou no ex. ${l.progress.upTo}` : '', nAns ? `gabarito: ${nAns}` : '', lastText].filter(Boolean).join(' · '),
-      }) + (l.reviewPick ? `<p class="log-card-detail list-pick"><strong>Revisar:</strong> ${esc(l.reviewPick)}</p>` : ''),
+        detail: [l.subject, plural(nEx, 'exercício', 'exercícios'), todo, l.progress ? 'sessão em andamento' : '', nAns ? `gabarito: ${nAns}` : '', lastText].filter(Boolean).join(' · '),
+      }) + (nEx ? `<p class="log-card-detail list-pick"><strong>Exercícios:</strong> ${esc(SC.formatKeys(scope))}</p>` : ''),
       actions: (l.pdf ? [chip('Ver PDF', 'eye', 'modal', { modal: 'listPdf', id: l.id })] : []).concat(actions),
     });
   }
@@ -306,10 +307,10 @@
 
   function reviewListsHtml() {
     const all = state.exerciseLists;
-    const shown = applyFilters(all, 'lists').sort((a, b) => SC.listNextAt(a) - SC.listNextAt(b));
+    const shown = applyFilters(all, 'lists').sort((a, b) => (SC.listNextAt(a) || 8.64e15) - (SC.listNextAt(b) || 8.64e15)); // lista sem exercícios vai para o fim
     let list;
     if (all.length === 0) {
-      list = emptyState('bookMarked', 'Nenhuma lista no ciclo', 'Adicione uma lista de exercícios e quantos exercícios ela tem. Ela volta para você refazer em intervalos crescentes, e a cada vez o app pergunta como foi.', button('Adicionar lista', 'plus', 'modal', { modal: 'exerciseList' }));
+      list = emptyState('bookMarked', 'Nenhuma lista no ciclo', 'Adicione uma lista de exercícios e vá cadastrando os que quiser (na ordem que quiser, pulando os que não fez). Ela volta para você refazer em intervalos crescentes, e a cada vez o app pergunta como foi.', button('Adicionar lista', 'plus', 'modal', { modal: 'exerciseList' }));
     } else if (shown.length === 0) {
       list = emptyState('filter', 'Nenhuma lista corresponde ao filtro');
     } else {
