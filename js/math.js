@@ -19,37 +19,48 @@
 
   let loading = null;
   let mathReady = false; // CSS + JS carregados: só então é seguro injetar o HTML do KaTeX
+  let lastFail = 0;
+  const RETRY_MS = 5000; // evita injetar link/script de novo a cada tecla digitada
 
   // Carrega uma vez só. CSS e JS precisam estar prontos antes de renderizar.
   // Se o CSS falhar, NÃO renderizamos: sem as regras do KaTeX o MathML de
   // acessibilidade fica visível e os spans soltos "escapam" do retângulo da resposta.
   function loadMath() {
     if (mathReady && window.katex) return Promise.resolve(window.katex);
-    if (!loading) {
-      loading = new Promise((resolve, reject) => {
-        let cssOk = false, jsOk = false;
-        const ready = () => {
-          if (!cssOk || !jsOk || !window.katex) return;
-          mathReady = true;
-          resolve(window.katex);
-        };
-        const fail = () => reject(new Error('katex-load-failed'));
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.crossOrigin = 'anonymous'; // mesmo modo da requisição pré-cacheada pelo Service Worker
-        link.href = CSS_URL;
-        link.onload = () => { cssOk = true; ready(); };
-        link.onerror = fail; // sem CSS, mantém o texto simples (não injeta HTML solto)
-        document.head.appendChild(link);
-        const script = document.createElement('script');
-        script.crossOrigin = 'anonymous';
-        script.src = JS_URL;
-        script.onload = () => { jsOk = true; ready(); };
-        script.onerror = fail;
-        document.head.appendChild(script);
-      });
-      loading.catch(() => {}); // sem internet/CSS: o texto simples continua aparecendo
-    }
+    if (loading) return loading;
+    if (Date.now() - lastFail < RETRY_MS) return Promise.reject(new Error('katex-load-failed'));
+    let link, script;
+    loading = new Promise((resolve, reject) => {
+      let cssOk = false, jsOk = false, settled = false;
+      const ready = () => {
+        if (settled || !cssOk || !jsOk || !window.katex) return;
+        settled = true;
+        mathReady = true;
+        resolve(window.katex);
+      };
+      const fail = () => {
+        if (settled) return;
+        settled = true;
+        lastFail = Date.now();
+        [link, script].forEach((n) => { if (n && n.parentNode) n.parentNode.removeChild(n); });
+        Promise.resolve().then(() => { if (!mathReady) loading = null; }); // permite tentar de novo quando a conexão/cache voltar
+        reject(new Error('katex-load-failed'));
+      };
+      link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.crossOrigin = 'anonymous'; // mesmo modo da requisição pré-cacheada pelo Service Worker
+      link.href = CSS_URL;
+      link.onload = () => { cssOk = true; ready(); };
+      link.onerror = fail; // sem CSS, mantém o texto simples (não injeta HTML solto)
+      script = document.createElement('script');
+      script.crossOrigin = 'anonymous';
+      script.src = JS_URL;
+      script.onload = () => { jsOk = true; ready(); };
+      script.onerror = fail;
+      document.head.appendChild(link);
+      document.head.appendChild(script);
+    });
+    loading.catch(() => {}); // sem internet/CSS: o texto simples continua aparecendo
     return loading;
   }
 
@@ -119,4 +130,7 @@
 
   SC.formatAnswer = formatAnswer;
   SC.loadMath = loadMath;
+  // Só vale prévia quando há marcação matemática de verdade; texto comum
+  // continua apenas dentro do campo (evita a "duplicação" abaixo do input).
+  SC.hasMath = (value) => splitMath(String(value == null ? '' : value)) !== null;
 })();

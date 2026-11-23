@@ -702,11 +702,12 @@
           const keys = Array.from(new Set(scope.concat(Object.keys(vis)))).sort(SC.compareKeys);
           const n = Object.keys(vis).length;
           gabCount.textContent = n ? `(${n} preenchido${n === 1 ? '' : 's'})` : '';
+          const previewHtml = (v) => SC.hasMath(v) ? SC.formatAnswer(v) : '';
           gabGrid.innerHTML = keys.map((k) => `
             <div class="gab-cell">
               <label class="gab-row"><span>${esc(k)}</span>
                 <input class="text-input" type="text" data-k="${esc(k)}" maxlength="500" autocomplete="off" value="${esc(vis[k] || '')}"></label>
-              <div class="gab-preview">${vis[k] ? SC.formatAnswer(vis[k]) : ''}</div>
+              <div class="gab-preview">${previewHtml(vis[k] || '')}</div>
             </div>`).join('');
         }
         // Prévia da fórmula enquanto você digita (sem precisar salvar).
@@ -715,7 +716,7 @@
           if (!inp) return;
           const cell = inp.closest('.gab-cell');
           const pv = cell && cell.querySelector('.gab-preview');
-          if (pv) pv.innerHTML = inp.value.trim() ? SC.formatAnswer(inp.value) : '';
+          if (pv) pv.innerHTML = SC.hasMath(inp.value) ? SC.formatAnswer(inp.value) : '';
         });
         gabGrid.addEventListener('change', (e) => {
           const inp = e.target.closest('input[data-k]');
