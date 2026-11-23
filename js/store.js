@@ -48,7 +48,7 @@
     topicReviews: [],  // LEGADO (v14): não tem mais tela; preservado nos dados
     exerciseLists: [], // { id, name, subject, keys: ["1", "3a", "7"] (exercícios cadastrados, qualquer ordem; listas antigas têm total/reviewPick no lugar), notes, answers: { "1": "C", "3a": "12" }, pdf: { name, size } | null, progress: { wrong[], hardKeys[], at } | null, items: { "7": { n, EF, intervalDays, lastReviewedAt, nextReviewAt, lapses, history[] }, "23a": {…} }, createdAt, n, EF, intervalDays, lastReviewedAt, nextReviewAt, history[{ at, quality, intervalDays, result }] }
     questionBank: [],  // { id, subject, topic, statementText, imageData, answerKey, resolutionText, resolutionImageData, createdAt, n, EF, intervalDays, lastReviewedAt, nextReviewAt, retired, history[] }
-    isDark: false,
+    isDark: true,
 
     // Controle de sync (persistido só neste aparelho)
     lastModifiedAt: 0, // sobe a cada alteração local

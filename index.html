@@ -11,8 +11,8 @@
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
 <link rel="manifest" href="./manifest.webmanifest">
 
-<!-- Aplica o tema escuro antes da 1ª pintura (evita o "flash" branco). -->
-<script>try{if(localStorage.getItem('sc-dark')==='1')document.documentElement.classList.add('dark')}catch(e){}</script>
+<!-- Aplica o tema escuro antes da 1ª pintura (evita o "flash" branco). Padrão = escuro; só não aplica se o usuário escolheu claro. -->
+<script>try{if(localStorage.getItem('sc-dark')!=='0')document.documentElement.classList.add('dark')}catch(e){}</script>
 
 <!-- Fontes: só um extra. Sem internet o app usa fontes do sistema (definidas no CSS)
      e o Service Worker guarda estas para uso offline. -->

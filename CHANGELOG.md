@@ -1,5 +1,14 @@
 # Changelog
 
+## [v29] — Tema escuro por padrão
+
+### Alterado
+- O app abre em modo escuro na primeira vez (e para quem nunca escolheu um tema). Quem já tinha optado pelo claro continua no claro: a preferência salva em `isDark` e no espelho `sc-dark` do `localStorage` é respeitada. O botão do sol/lua no cabeçalho continua alternando normalmente.
+
+### Arquivos
+`index.html`, `js/store.js`.
+
+---
 ## [v28] — Gabarito no cadastro rápido de exercícios
 
 ### Adicionado
