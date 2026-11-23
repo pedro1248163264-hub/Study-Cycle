@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Study Cycle</title>
 <meta name="description" content="Organize seus estudos em ciclos inteligentes.">
-<meta name="theme-color" content="#4F46E5">
+<meta name="theme-color" content="#0B0F19">
 
 <link rel="icon" type="image/svg+xml" href="./icons/favicon.svg">
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
@@ -48,15 +48,19 @@
     </div>
   </div>
 
-  <nav class="nav-tabs" id="nav-tabs"></nav>
+  <nav class="nav-tabs" id="nav-tabs" aria-label="Navegação principal"></nav>
 
   <!-- SYNC STATUS -->
-  <div class="sync-status" id="sync-status"></div>
+  <div class="sync-status" id="sync-status" aria-live="polite"></div>
 </header>
 
 <!-- Telas e modais são desenhados pelo JS (js/screens.js e js/modals.js). -->
 <main class="container" id="screen"></main>
 <div id="modal-root"></div>
+
+<noscript>
+  <p class="container" style="padding:2rem 1.5rem">Este aplicativo precisa de JavaScript para funcionar. Ative-o no navegador.</p>
+</noscript>
 
 <!-- Ordem importa: cada arquivo usa os anteriores. Arquivo novo => também em sw.js (APP_FILES). -->
 <script src="./js/icons.js"></script>

@@ -1,5 +1,28 @@
 # Changelog
 
+## [v31] — Correções de robustez, segurança e limpeza
+
+### Corrigido
+- **Perda de dados na sincronização**: uma data inválida vinda da nuvem (`updated_at`) não faz mais o app empurrar o estado local por cima do remoto. Erros de um PDF não impedem o envio dos demais, e um erro antigo não reaparece depois de um sync bem-sucedido.
+- **Falha de gravação escondida**: o IndexedDB agora espera o fim da transação; se o salvamento falhar (cota/permissão), o aviso aparece na barra de sincronização em vez de ser engolido.
+- **XSS nas chaves de exercício**: chaves usadas em `data-k`/`aria-label` dos chips de revisão passam a ser escapadas, como já era feito no texto visível.
+- **PDF com vida útil correta**: a URL temporária deixou de ser global e não é mais revogada por timer 30 s depois — cada abertura libera a própria URL ao fechar/trocar de modal.
+- **Ciclo de vida dos modais**: listeners de `paste` e de teclado são removidos ao fechar; foco vai para o primeiro campo, Tab fica preso no diálogo e o foco original volta ao fechar. Revelar o gabarito não redesenha mais a tela inteira.
+- **Validações e consistência**: limites `min`/`max` dos ajustes passam a ser conferidos no salvamento; excluir uma matéria limpa o bloco em andamento; intervalos de exercícios invertidos/fora do limite são rejeitados; `revive()` zera `n`/`EF`/intervalo; EF atualizado é usado no cálculo do próximo intervalo; JSON quebrado em `data-set` não trava a ação.
+- **OCR**: progresso e URL temporária por chamada (dois OCRs não trocam mensagens), e erro ao ler imagem não vaza a URL.
+- **Service Worker**: uma falha isolada no pré-cache não impede a instalação; limpeza de entradas órfãs/versões antigas do KaTeX; cache de rede sem rejeição silenciosa.
+- **Acessibilidade/tema**: `aria-live` no status de sync, `aria-label` na navegação, aviso `<noscript>`, foco visível em botões de matéria em telas sem hover e cores do tema escuro coerentes no splash/manifesto.
+
+### Removido (código morto)
+- Exports e funções sem uso: `serializeAnswers`, `SC.loadMath`, `alertTriangle`, `SC.closeModal`, `LIST_RESULT`, `SYNCED`/`DEFAULT_SETTINGS` exportados, `files.put`, ramo de "Desfazer" do toast, botão "Voltar" sem origem no visualizador de PDF, ícone `alertTriangle`, CSS das telas de erro antigas, `.seg/.seg-btn`, `.due-chip.is-later`, variantes de badge sem uso e `.toast-undo`.
+
+### Segurança (Servidor)
+- `pdf-storage.sql` agora usa `set search_path = ''` nas funções, fechando a chance de resolver funções em esquemas não confiáveis. **Atenção**: o grant global de `EXECUTE` para `anon`/`authenticated` continua como estava — ele é necessário para o app funcionar sem login, mas vale revisar se você quiser restringir por IP/chave.
+
+### Arquivos
+`js/store.js`, `js/sync.js`, `js/logic.js`, `js/ui.js`, `js/main.js`, `js/modals.js`, `js/screens.js`, `js/ocr.js`, `js/math.js`, `js/icons.js`, `css/styles.css`, `index.html`, `sw.js`, `manifest.webmanifest`, `supabase/pdf-storage.sql`, `CHANGELOG.md`.
+
+---
 ## [v30.1] — Correção: prévia do gabarito não escapa mais do retângulo
 
 ### Corrigido

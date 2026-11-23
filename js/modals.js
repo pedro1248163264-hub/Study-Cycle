@@ -86,6 +86,13 @@
           const weekly = int(v.weeklyHours), minH = int(v.minHoursPerSubject), streak = int(v.streakHours);
           const win = int(v.windowHours), maxS = int(v.maxSubjectsPerWindow);
           const errors = [];
+          // Respeita os limites declarados em SETTINGS_FIELDS (min/max dos inputs).
+          SETTINGS_FIELDS.forEach(([name, label, min, max]) => {
+            const raw = String(v[name] == null ? '' : v[name]).trim();
+            if (!raw) return;
+            const num = Number(raw);
+            if (!Number.isFinite(num) || num < min || num > max) errors.push(`${label}: use um valor entre ${min} e ${max}.`);
+          });
           if (n * minH > weekly) errors.push(`Com ${n} matérias ativas e um mínimo de ${minH}h cada, você precisa de pelo menos ${n * minH}h. Aumente o total de horas semanais ou diminua o mínimo.`);
           if (streak < 1) errors.push('Horas seguidas por matéria precisa ser pelo menos 1.');
           if ((win > 0) !== (maxS > 0)) errors.push('Para usar a regra de diversidade, preencha tanto a faixa de horas quanto o número máximo de matérias (ou deixe as duas em 0 para desativar).');
@@ -126,7 +133,12 @@
         }),
         onDelete() {
           if (!confirm(`Excluir a matéria "${s.name}"?`)) return;
-          commit(() => col.remove('subjects', s.id));
+          commit(() => {
+            col.remove('subjects', s.id);
+            // Um bloco em andamento apontando para a matéria excluída
+            // distorcia a próxima sugestão do ciclo.
+            if (state.currentBlock && state.currentBlock.subjectId === s.id) state.currentBlock = null;
+          });
         },
       }),
     };
@@ -387,11 +399,15 @@
           },
           onSave(v) {
             const c = collect();
+            // Upload é assíncrono: se o usuário fechar/trocar de modal no meio,
+            // o root sai do DOM e nada pode ser gravado ou redesenhar a tela.
+            const root = form.root;
+            const stillOpen = () => document.body.contains(root);
             // total/reviewPick são do formato antigo: saem de vez ao salvar.
             const fields = { name: v.name, subject: v.subject, keys: c.keys, answers: c.answers, total: undefined, reviewPick: undefined, dailyLimit: int(v.dailyLimit) || null, notes: v.notes };
             const oldPath = l && l.pdf && l.pdf.path;
-            const saveBtn = form.root.querySelector('[data-save]');
-            const finish = (pdf) => commit(() => {
+            const saveBtn = root.querySelector('[data-save]');
+            const finish = (pdf) => { if (!stillOpen()) return; commit(() => {
               fields.pdf = pdf;
               if (l) col.patch('exerciseLists', l.id, fields); // só conteúdo; o progresso da revisão não é tocado
               else {
@@ -401,16 +417,18 @@
                   lastReviewedAt: null, nextReviewAt: now, history: [],
                 }, fields));
               }
-            });
+            }); };
             if (pending) {
               saveBtn.disabled = true;
               saveBtn.textContent = 'Enviando PDF…';
               SC.cloud.upload(pending)
                 .then((path) => {
+                  if (!stillOpen()) return;
                   if (oldPath) SC.cloud.remove(oldPath);
                   finish({ name: pending.name, size: pending.size, path });
                 })
                 .catch((err) => {
+                  if (!stillOpen()) return;
                   saveBtn.disabled = false;
                   saveBtn.textContent = l ? 'Salvar alterações' : 'Adicionar lista';
                   form.showError('Não consegui enviar o PDF: ' + ((err && err.message) || 'erro de conexão') + ' Nada foi salvo.');
@@ -430,30 +448,35 @@
   // ---------- REVISÃO: VER O PDF DA LISTA ----------
   // O PDF é baixado da nuvem só para a tela (memória) e descartado ao fechar:
   // nada fica salvo no aparelho (a menos que você toque em "Baixar").
-  let pdfUrl = null;
-  const dropPdf = () => { if (pdfUrl) { URL.revokeObjectURL(pdfUrl); pdfUrl = null; } };
   // Baixa o PDF da lista e mostra dentro de `box` (usado em "Ver PDF" e dentro de "Refazer lista").
   function mountListPdf(box, l) {
     const alive = () => document.body.contains(box);
-    dropPdf();
-    // Quando o modal fecha (ou troca), joga fora o PDF da memória.
-    const watch = setInterval(() => { if (!alive()) { clearInterval(watch); setTimeout(dropPdf, 30000); } }, 1000);
+    let url = null;
+    let closed = false;
+    // Cada montagem dona da própria URL: uma variável global + timer podia
+    // revogar o PDF de um modal aberto depois. O cleanup do ui.js chama isto
+    // no fechamento/troca, sem intervalos nem delay.
+    const release = () => {
+      closed = true;
+      if (url) { URL.revokeObjectURL(url); url = null; }
+    };
+    SC.onModalCleanup(release);
 
     function show(blob) {
-      if (!alive()) return;
-      dropPdf();
-      pdfUrl = URL.createObjectURL(blob);
+      if (!alive() || closed) return;
+      if (url) URL.revokeObjectURL(url);
+      url = URL.createObjectURL(blob);
       // Celular: o visualizador embutido às vezes mostra só a 1ª página — por isso os links.
       box.innerHTML = `
-        <iframe class="pdf-frame" src="${pdfUrl}" title="${esc(l.name)}"></iframe>
+        <iframe class="pdf-frame" src="${url}" title="${esc(l.name)}"></iframe>
         <div class="ocr-row">
-          <a class="btn-chip" href="${pdfUrl}" target="_blank" rel="noopener">${icon('eye', true)}Abrir em outra aba</a>
-          <a class="btn-chip" href="${pdfUrl}" download="${esc(l.pdf.name || 'lista.pdf')}">Baixar</a>
+          <a class="btn-chip" href="${url}" target="_blank" rel="noopener">${icon('eye', true)}Abrir em outra aba</a>
+          <a class="btn-chip" href="${url}" download="${esc(l.pdf.name || 'lista.pdf')}">Baixar</a>
         </div>`;
     }
 
     function fail(msg, retry) {
-      if (!alive()) return;
+      if (!alive() || closed) return;
       box.innerHTML = `<p class="field-help">${esc(msg)}</p>${retry ? `<button type="button" class="btn-chip" data-role="retry">${icon('refreshCw', true)}Tentar de novo</button>` : ''}`;
       const b = box.querySelector('[data-role="retry"]');
       if (b) b.addEventListener('click', load);
@@ -481,9 +504,7 @@
     return {
       title: l.name,
       wide: true,
-      body: `
-        <div data-pdf-box><p class="field-help">Carregando PDF…</p></div>
-        ${m.back ? `<div class="modal-form-actions"><button type="button" class="btn-secondary-block" data-action="modal" data-modal="listRedo" data-id="${l.id}">Voltar para a avaliação</button></div>` : ''}`,
+      body: '<div data-pdf-box><p class="field-help">Carregando PDF…</p></div>',
       wire() { mountListPdf(document.querySelector('[data-pdf-box]'), l); },
     };
   };
@@ -632,10 +653,11 @@
 
         function paint() {
           paintDue();
+          // Chaves vêm de dados do usuário: escapar também dentro dos atributos.
           chipsEl.innerHTML = wrong.map((k) =>
-            `<button type="button" class="wrong-chip" data-k="${k}" aria-label="Desmarcar ${k}">${esc(k)}${icon('x', true)}</button>`).join('');
+            `<button type="button" class="wrong-chip" data-k="${esc(k)}" aria-label="Desmarcar ${esc(k)}">${esc(k)}${icon('x', true)}</button>`).join('');
           hardChipsEl.innerHTML = hardKeys.map((k) =>
-            `<button type="button" class="wrong-chip hard-chip" data-k="${k}" aria-label="Desmarcar ${k}">${esc(k)}${icon('x', true)}</button>`).join('');
+            `<button type="button" class="wrong-chip hard-chip" data-k="${esc(k)}" aria-label="Desmarcar ${esc(k)}">${esc(k)}${icon('x', true)}</button>`).join('');
           const keys = sessionKeys();
           const right = keys.filter((k) => !wrong.includes(k)).length;
           sumEl.textContent = keys.length
@@ -831,7 +853,7 @@
         ${inputField({ name: 'name', label: 'Nome', placeholder: 'ex: ITA 2023 · 1ª fase', bold: true })}
         ${inputField({ name: 'date', label: 'Data', type: 'date', value: new Date().toISOString().slice(0, 10) })}
         ${inputField({ name: 'minutes', label: 'Tempo gasto em minutos (opcional)', type: 'number', attrs: 'min="1"' })}
-        ${state.subjects.length ? state.subjects.map((s) => inputField({ name: 'r_' + s.id, label: SC.esc(s.name) + ' · acertos/total', placeholder: 'ex: 7/10' })).join('') : '<p>Cadastre matérias no Study Cycle primeiro.</p>'}
+        ${state.subjects.length ? state.subjects.map((s) => inputField({ name: 'r_' + s.id, label: s.name + ' · acertos/total', placeholder: 'ex: 7/10' })).join('') : '<p>Cadastre matérias no Study Cycle primeiro.</p>'}
         ${formActions({ save: 'Registrar simulado' })}`,
       wire: () => bindForm({
         validate: (v) => !!(v.name && v.date && rows(v).length && rows(v).every((r) => r.total > 0 && r.correct <= r.total)),
@@ -891,7 +913,6 @@
         form.root.addEventListener('focusin', track);
         form.root.addEventListener('pointerdown', track);
         function onPaste(e) {
-          if (!document.body.contains(form.root)) { document.removeEventListener('paste', onPaste); return; }
           const items = e.clipboardData && e.clipboardData.items;
           if (!items) return;
           for (let i = 0; i < items.length; i++) {
@@ -903,6 +924,7 @@
           }
         }
         document.addEventListener('paste', onPaste);
+        SC.onModalCleanup(() => document.removeEventListener('paste', onPaste));
       },
     };
   };
@@ -1031,5 +1053,4 @@
     };
   };
 
-  SC.closeModal = closeModal;
 })();

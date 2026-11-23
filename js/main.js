@@ -17,6 +17,10 @@
 
   const persist = () => { saveState(); render(); };
 
+  // Nenhuma ação pode rodar antes do IndexedDB devolver o estado salvo:
+  // um clique no ⟳ nessa janela poderia empurrar um estado vazio para a nuvem.
+  let ready = false;
+
   Object.assign(SC.actions, {
     modal(el) {
       const props = Object.assign({}, el.dataset);
@@ -28,8 +32,8 @@
 
     'start-queue': () => SC.startQueue(),
 
-    set(el) { state.ui[el.dataset.key] = el.dataset.value; render(); },
-    'clear-filters'(el) { state.ui.filters[el.dataset.group] = {}; render(); },
+    set(el) { state.ui[el.dataset.key] = el.dataset.value; render({ screenOnly: true }); },
+    'clear-filters'(el) { state.ui.filters[el.dataset.group] = {}; render({ screenOnly: true }); },
 
     remove(el) {
       if (el.dataset.confirm && !confirm(el.dataset.confirm)) return;
@@ -42,7 +46,11 @@
       persist();
     },
     patch(el) {
-      col.patch(el.dataset.col, el.dataset.id, JSON.parse(el.dataset.set));
+      // data-set vem de HTML: um JSON quebrado não pode travar a ação.
+      let changes;
+      try { changes = JSON.parse(el.dataset.set); } catch (e) { return; }
+      if (!changes || typeof changes !== 'object' || Array.isArray(changes)) return;
+      col.patch(el.dataset.col, el.dataset.id, changes);
       persist();
     },
 
@@ -64,8 +72,17 @@
     },
 
     // Revisão: questão do banco e lista de exercícios
-    revive(el) { col.patch('questionBank', el.dataset.id, { retired: false, n: 0, nextReviewAt: Date.now() }); persist(); },
-    reveal(el) { state.modal[el.dataset.what] = true; render(); }, // mostra gabarito/resolução
+    // Voltou da graduação: recomeça do zero, senão o EF antigo fazia o
+    // primeiro intervalo já sair enorme com n = 0.
+    revive(el) {
+      col.patch('questionBank', el.dataset.id, { retired: false, n: 0, EF: 2.5, intervalDays: 0, nextReviewAt: Date.now() });
+      persist();
+    },
+    reveal(el) {
+      if (!state.modal) return; // ação só existe dentro do modal
+      state.modal[el.dataset.what] = true;
+      render({ modalOnly: true }); // mostra gabarito/resolução sem redesenhar a tela
+    },
     // Nota de uma questão do banco (Errei / Difícil / Fácil). Listas de
     // exercícios são avaliadas dentro do próprio modal (modals.js, listRedo).
     grade(el) {
@@ -91,24 +108,28 @@
   });
 
   document.addEventListener('click', (e) => {
-    const el = e.target.closest('[data-action]');
+    if (!ready) return;
+    const el = e.target.closest && e.target.closest('[data-action]');
     const fn = el && SC.actions[el.dataset.action];
     if (fn) fn(el, e);
   });
 
   // Filtros: <select data-filter="grupo.campo">
   document.addEventListener('change', (e) => {
+    if (!ready) return;
     const sel = e.target.closest && e.target.closest('select[data-filter]');
     if (!sel) return;
     const [group, field] = sel.dataset.filter.split('.');
+    if (!state.ui.filters[group]) return;
     state.ui.filters[group][field] = sel.value;
-    render();
+    render({ screenOnly: true });
   });
 
   document.addEventListener('keydown', (e) => {
+    if (!ready) return;
     if (e.key === 'Escape' && state.modal) { closeModal(); return; }
     // Enter/Espaço em "botões" que não são <button> (ex.: chip "Próxima matéria").
-    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role="button"][data-action]')) {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[role="button"][data-action]')) {
       e.preventDefault();
       e.target.click();
     }
@@ -125,6 +146,12 @@
     }
     SC.applyTheme();
     render();
+    ready = true;
+  }, () => { // IndexedDB indisponível: ainda abre com dados vazios
+    SC.applyData({});
+    SC.applyTheme();
+    render();
+    ready = true;
   });
 
   // Pede ao navegador para não apagar os dados do app quando faltar espaço

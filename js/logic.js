@@ -160,7 +160,7 @@
   //   acertou com dificuldade -> 2 dias
   //   acertou tranquilo       -> 5 dias
   // Depois, o intervalo cresce a cada acerto:
-  //   tranquilo -> anterior x (EF x 0,85)   (EF 2,5 => ~x2,1: 5, 11, 23, 49, 104…)
+  //   tranquilo -> anterior x (novo EF x 0,85)   (EF 2,5 => ~x2,1: 5, 11, 23, 49, 104…)
   //   dificuldade -> anterior x ~1,25 (cresce devagar, no mínimo +1 dia)
   // EF ("facilidade", 1,3 a 2,8) sobe um pouco com acertos tranquilos e cai com
   // dificuldade/erro, então o que é difícil para VOCÊ espaça menos. Teto: 180 dias (~6 meses).
@@ -176,7 +176,9 @@
     if (n === 0) interval = hard ? (firstHardDays || 3) : 5;
     else {
       const prev = Math.max(1, prevIntervalDays || 1);
-      const mult = hard ? Math.max(1.2, EF * 0.5) : EF * 0.85;
+      // Usa o EF JÁ atualizado: com o EF antigo, quem melhora de nota demorava
+      // uma revisão para sentir o aumento da facilidade.
+      const mult = hard ? Math.max(1.2, nextEF * 0.5) : nextEF * 0.85;
       interval = Math.max(prev + 1, Math.round(prev * mult));
     }
     return { n: n + 1, EF: nextEF, intervalDays: Math.min(interval, MAX_INTERVAL_DAYS) };
@@ -243,8 +245,16 @@
       const t = toks[i], prev = toks[i - 1], next = toks[i + 1];
       if (t.t === 'n') {
         if (prev && prev.t === 'd' && toks[i - 2] && toks[i - 2].t === 'n') { // 5-8
-          for (let k = toks[i - 2].v + 1; k <= t.v && k - toks[i - 2].v < 200; k++) entry(k).whole = true;
-          cur = t.v;
+          const from = toks[i - 2].v, to = t.v;
+          if (from < 1 || (max && from > max)) invalid.push(String(from));
+          if (to < from) invalid.push(`${from}-${to}`); // intervalo invertido
+          else for (let k = from + 1; k <= to && k - from <= 200; k++) {
+            entry(k).whole = true;
+            // Antes só a ponta era validada: "1-300" com max=100 cadastrava
+            // silenciosamente exercícios inexistentes.
+            if (k < 1 || (max && k > max)) invalid.push(String(k));
+          }
+          cur = to;
         } else { cur = t.v; entry(cur).whole = true; }
         if (t.v < 1 || (max && t.v > max)) invalid.push(String(t.v));
       } else if (t.t === 'l') {
@@ -399,7 +409,8 @@
     const all0 = listItems(list);
     // Só conta o que está cadastrado na lista (o resto do histórico fica guardado).
     const items = {};
-    Object.keys(all0).forEach((k) => { if (scope.includes(k)) items[k] = all0[k]; });
+    const inScope = new Set(scope);
+    Object.keys(all0).forEach((k) => { if (inScope.has(k)) items[k] = all0[k]; });
     const keys = Object.keys(items);
     const first = keys.length === 0;           // nunca revisada
     const due = keys.filter((k) => items[k].nextReviewAt <= now);
@@ -469,10 +480,11 @@
     const targets = Array.from(reviewed).filter((k) => !(/[a-z]$/i.test(k) && wrongNums.has(keyNum(k))));
     // Carga por dia (dias a partir de hoje) dos exercícios que NÃO estão sendo reagendados
     // agora: serve para espalhar os vencimentos em vez de empilhar tudo no mesmo dia.
-    const scope = listScope(list);
+    const scope = new Set(listScope(list));
+    const reviewing = new Set(targets);
     const load = {};
     Object.keys(items).forEach((k) => {
-      if (targets.includes(k) || !scope.includes(k)) return;
+      if (reviewing.has(k) || !scope.has(k)) return;
       const day = calendarDayDiff(items[k].nextReviewAt, now);
       load[day] = (load[day] || 0) + 1;
     });
@@ -517,7 +529,8 @@
     const scope = listScope(list);
     if (!scope.length) return 0; // lista sem exercícios: nada a revisar (0 = sem data)
     const items = listItems(list);
-    const keys = Object.keys(items).filter((k) => scope.includes(k));
+    const inScope = new Set(scope);
+    const keys = Object.keys(items).filter((k) => inScope.has(k));
     if (!keys.length) return list.nextReviewAt || now; // nunca revisada
     const d = listDue(list, now);
     // Tem coisa vencida/nunca feita, mas o limite de hoje já foi usado: só amanhã.
@@ -552,11 +565,6 @@
     return { answers, invalid };
   }
 
-  function serializeAnswers(answers) {
-    return Object.keys(answers || {}).filter((k) => String(answers[k]).trim()).sort(compareKeys)
-      .map((k) => `${k}: ${answers[k]}`).join('; ');
-  }
-
   // Round-robin entre matérias: a fila do dia mistura matérias em vez de
   // agrupar (interleaving).
   function interleaveBySubject(items) {
@@ -584,24 +592,38 @@
     now = now || Date.now();
     const due = (x) => x.subject === subject && x.nextReviewAt && x.nextReviewAt <= now;
     return {
-      lists: state.exerciseLists.filter((l) => l.subject === subject && listNextAt(l, now) && listNextAt(l, now) <= now).length,
+      lists: state.exerciseLists.filter((l) => {
+        if (l.subject !== subject) return false;
+        const at = listNextAt(l, now); // antes calculado duas vezes por lista
+        return at && at <= now;
+      }).length,
       questions: state.questionBank.filter((q) => !q.retired && due(q)).length,
     };
   }
 
   // Fila de hoje (listas + questões vencidas), misturada entre matérias.
+  // A fila é pedida por vários pontos no mesmo instante (tela + modo fila);
+  // cada `listNextAt` varre escopo/itens, então guardamos o resultado enquanto
+  // as coleções e o segundo atual não mudam. Toda escrita troca a referência
+  // do array (col.put/patch/remove), o que invalida o cache automaticamente.
+  let queueCache = null;
   function reviewQueue(state, now) {
     now = now || Date.now();
+    const tick = Math.floor(now / 1000);
+    if (queueCache && queueCache.tick === tick
+      && queueCache.lists === state.exerciseLists
+      && queueCache.questions === state.questionBank) return queueCache.queue;
     const lists = state.exerciseLists.map((x) => ({ kind: 'list', id: x.id, subject: x.subject, nextReviewAt: listNextAt(x, now) }));
     const qs = state.questionBank.filter((q) => !q.retired).map((x) => ({ kind: 'question', id: x.id, subject: x.subject, nextReviewAt: x.nextReviewAt }));
-    return interleaveBySubject(lists.concat(qs).filter((x) => x.nextReviewAt && x.nextReviewAt <= now)
+    const queue = interleaveBySubject(lists.concat(qs).filter((x) => x.nextReviewAt && x.nextReviewAt <= now)
       .sort((a, b) => a.nextReviewAt - b.nextReviewAt));
+    queueCache = { tick, lists: state.exerciseLists, questions: state.questionBank, queue };
+    return queue;
   }
 
   // Diferença em DIAS DE CALENDÁRIO (meia-noite a meia-noite), não em blocos
   // de 24h — senão uma questão criada agora aparecia como "Atrasada 1d".
   function calendarDayDiff(targetMs, fromMs) {
-    const startOfDay = (ms) => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); };
     return Math.round((startOfDay(targetMs) - startOfDay(fromMs)) / MS_PER_DAY);
   }
 
@@ -611,7 +633,7 @@
     calculateAllocations, generateSequence, getDerived,
     GRADUATE_AFTER_N, sm2Step, applyQuestionRedo, applyListSession,
     SESSION_MAX, dailyLimit, MAX_INTERVAL_DAYS, parseExerciseKeys, parseExerciseEntries, listScope, formatKeys, listItems, listDue, listNextAt, keyLabel, compareKeys,
-    visibleAnswers, parseAnswers, serializeAnswers,
+    visibleAnswers, parseAnswers,
     interleaveBySubject, reviewQueue, pendingReviews, calendarDayDiff, formatDate,
   });
 })();

@@ -24,6 +24,8 @@
   --accent-foreground: #4338CA;
   --border: #E2E8F0;
   --ring: rgba(79, 70, 229, 0.2);
+  --warning: #F59E0B;
+  --destructive: #E11D48;
 
   --radius-3xl: 1.5rem;
   --radius-2xl: 1rem;
@@ -53,6 +55,8 @@ html.dark {
   --accent-foreground: #818CF8;
   --border: #334155;
   --ring: rgba(99, 102, 241, 0.2);
+  --warning: #FBBF24;
+  --destructive: #FB7185;
 }
 
 * {
@@ -563,6 +567,10 @@ html.dark .icon-sun { display: block; }
   color: var(--foreground);
 }
 .subject-edit-btn .icon { width: 1rem; height: 1rem; }
+/* Em telas sem hover (celular/tablet), o botão nunca apareceria: mantém visível. */
+@media (hover: none) {
+  .subject-edit-btn { opacity: 1; }
+}
 
 /* botão de pausar fica ao lado do de editar */
 .subject-pause-btn { right: 3rem; }
@@ -1213,24 +1221,7 @@ html.dark .btn-chip-danger {
 }
 html.dark .btn-chip-danger:hover { background-color: rgba(159, 18, 57, 0.2); }
 
-/* =========================
-   ERROR LOG CARD
-   ========================= */
-.error-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.5rem; }
-@media (min-width: 640px) {
-  .log-card.error-card { align-items: flex-start; }
-}
-.error-card-title {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-}
-.error-card-subject { font-family: var(--font-display); font-weight: 700; font-size: 1rem; }
-.error-card-sep { color: var(--muted-foreground); }
-.error-card-topic { font-weight: 500; color: var(--muted-foreground); font-size: 0.875rem; }
-.error-card-desc { font-size: 0.875rem; color: var(--foreground); line-height: 1.6; }
-
+/* Selo de percentual dos simulados (reaproveita o visual dos antigos erros). */
 .error-badge {
   display: inline-flex;
   align-items: center;
@@ -1242,19 +1233,7 @@ html.dark .btn-chip-danger:hover { background-color: rgba(159, 18, 57, 0.2); }
 }
 
 .error-badge-violet { background-color: #F5F3FF; color: #6D28D9; border-color: #DDD6FE; }
-.error-badge-amber { background-color: #FFFBEB; color: #B45309; border-color: #FDE68A; }
-.error-badge-blue { background-color: #EFF6FF; color: #1D4ED8; border-color: #BFDBFE; }
-.error-badge-rose { background-color: #FFF1F2; color: #BE123C; border-color: #FECDD3; }
-.error-badge-orange { background-color: #FFF7ED; color: #C2410C; border-color: #FED7AA; }
-.error-badge-fuchsia { background-color: #FAE8FF; color: #A21CAF; border-color: #F5D0FE; }
-.error-badge-neutral { background-color: var(--muted); color: var(--muted-foreground); border-color: var(--border); }
-
 html.dark .error-badge-violet { background-color: rgba(76, 29, 149, 0.25); color: #A78BFA; border-color: #5B21B6; }
-html.dark .error-badge-amber { background-color: rgba(120, 53, 15, 0.25); color: #FBBF24; border-color: #92400E; }
-html.dark .error-badge-blue { background-color: rgba(30, 58, 138, 0.25); color: #60A5FA; border-color: #1E40AF; }
-html.dark .error-badge-rose { background-color: rgba(136, 19, 55, 0.25); color: #FB7185; border-color: #9F1239; }
-html.dark .error-badge-orange { background-color: rgba(124, 45, 18, 0.25); color: #FB923C; border-color: #9A3412; }
-html.dark .error-badge-fuchsia { background-color: rgba(112, 26, 117, 0.25); color: #E879F9; border-color: #86198F; }
 
 /* =========================
    FILTER BAR
@@ -1461,10 +1440,6 @@ html.dark .due-badge-upcoming { background-color: var(--muted); color: var(--mut
   color: var(--muted-foreground);
 }
 .rev-type-tag .icon { width: 0.875rem; height: 0.875rem; }
-
-/* "strength" badge (based on ease factor) — reuses the error-badge base */
-.error-badge-green { background-color: #ECFDF5; color: #047857; border-color: #A7F3D0; }
-html.dark .error-badge-green { background-color: rgba(6, 95, 70, 0.25); color: #34D399; border-color: #065F46; }
 
 /* small square thumbnail for a bookmarked question's image, inside a log-card */
 .log-card-thumb {
@@ -1703,13 +1678,6 @@ html.dark .wrong-chip { background-color: rgba(159, 18, 57, 0.25); border-color:
 html.dark .due-chip.is-lapsed { background-color: rgba(159, 18, 57, 0.25); border-color: rgba(251, 113, 133, 0.5); color: #FDA4AF; }
 .legend-dot { display: inline-block; width: 0.5rem; height: 0.5rem; margin-right: 0.375rem; border-radius: 50%; background-color: #FB7185; }
 .redo-block .btn-chip[data-role="more"] { margin-top: 0.5rem; }
-.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 0.375rem; }
-.seg-btn {
-  padding: 0.625rem 0.5rem; font-size: 0.875rem; font-weight: 500;
-  border-radius: var(--radius-xl); border: 1px solid var(--border);
-  background-color: var(--background); color: var(--muted-foreground, #64748B);
-}
-.seg-btn.is-on { border-color: var(--primary, #4F46E5); color: var(--primary, #4F46E5); font-weight: 600; }
 .redo-more { margin-bottom: 0.75rem; border-top: 1px solid var(--border); padding-top: 0.75rem; }
 .redo-more summary { cursor: pointer; font-size: 0.875rem; font-weight: 500; color: var(--muted-foreground, #64748B); }
 .redo-more[open] summary { margin-bottom: 0.75rem; }
@@ -1732,8 +1700,6 @@ html.dark .due-chip.is-wrong { border-color: #FB7185; background-color: #BE123C;
   .redo-layout .redo-pdf { order: -1; margin-top: 0; border-top: 0; padding-top: 0; position: sticky; top: 4.5rem; }
   .redo-layout .redo-pdf .pdf-frame { height: calc(100vh - 13rem); }
 }
-.due-chip.is-later { opacity: 0.5; }
-
 /* v22: acertou com dificuldade (laranja) + gabarito por exercício */
 .due-chip.is-hard { border-color: #F59E0B; background-color: #F59E0B; color: #fff; }
 html.dark .due-chip.is-hard { border-color: #FBBF24; background-color: #B45309; color: #fff; }
@@ -1789,11 +1755,13 @@ html.dark .gab-miss { background-color: rgba(225, 29, 72, 0.15); border-color: r
 .review-answer-key-value .katex,
 .gab-preview .katex { color: inherit; max-width: 100%; }
 html.dark .katex-error { color: #FCA5A5; }
+/* LaTeX inválido cai como texto cru: deixa claro que não renderizou. */
+.math-error { color: #B45309; font-size: 0.9em; }
+html.dark .math-error { color: #FBBF24; }
 
-/* Aviso curto (toast) com "Desfazer" */
+/* Aviso curto (toast) */
 #toast-root { position: fixed; left: 0; right: 0; bottom: calc(1rem + env(safe-area-inset-bottom)); display: flex; justify-content: center; z-index: 1000; pointer-events: none; }
 .toast { pointer-events: auto; display: flex; align-items: center; gap: 1rem; background: #1f2937; color: #fff; padding: 0.7rem 1rem; border-radius: 0.75rem; box-shadow: 0 8px 24px rgba(0,0,0,.25); font-size: 0.9rem; }
-.toast-undo { background: none; border: 0; color: #a5b4fc; font-weight: 600; cursor: pointer; font: inherit; font-weight: 600; }
 
 /* Editor de lista: uma linha por exercício (nº, resposta, revisar), criadas conforme você digita */
 .ex-rows { display: flex; flex-direction: column; gap: 0.375rem; margin: 0.625rem 0 0.25rem; max-height: 22rem; overflow-y: auto; }

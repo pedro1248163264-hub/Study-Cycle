@@ -21,7 +21,11 @@
   SC.actions = {};
 
   // ---------- ÍCONES / BOTÕES ----------
-  const icon = (name, small) => (small ? ICONS[name].replace('class="icon"', 'class="icon icon-sm"') : ICONS[name]);
+  // Nome de ícone desconhecido (dado antigo ou digitação) não pode derrubar a tela.
+  const icon = (name, small) => {
+    const svg = ICONS[name] || ICONS.helpCircle || '';
+    return small ? svg.replace('class="icon"', 'class="icon icon-sm"') : svg;
+  };
 
   // { a: 1, b: 'x' } -> ' data-a="1" data-b="x"'
   const dataAttrs = (o) => Object.keys(o || {})
@@ -79,7 +83,7 @@
   // Matérias cadastradas + as que aparecem nos itens, em ordem alfabética.
   const subjectFilterOptions = (items) =>
     Array.from(new Set(state.subjects.map((s) => s.name).concat(items.map((i) => i.subject).filter(Boolean))))
-      .sort((a, b) => a.localeCompare(b));
+      .sort((a, b) => String(a).localeCompare(String(b)));
 
   // Aplica os filtros do grupo: o nome de cada filtro é o campo do item.
   const applyFilters = (list, group) => {
@@ -257,7 +261,9 @@
     const del = root.querySelector('[data-delete]');
     if (del && onDelete) del.addEventListener('click', onDelete);
     sync();
-    return { root, sync, showError: (msg) => { errBox.innerHTML = msg ? errorBox(msg) : ''; validationShown = false; } };
+    // Erros de fora da validação (senha, PDF, imagem) também precisam ser
+    // limpos na próxima sincronização: manter a flag evitava erro "preso".
+    return { root, sync, showError: (msg) => { errBox.innerHTML = msg ? errorBox(msg) : ''; validationShown = !!msg; } };
   }
 
   // ---------- MODAL ----------
@@ -274,11 +280,15 @@
     </div>`;
 
   // Abre um modal. `props` ficam em state.modal (ex.: { id } para editar).
+  let lastFocused = null;
   function openModal(name, props) {
+    const active = document.activeElement;
+    const root = document.getElementById('modal-root');
+    if (active && root && !root.contains(active)) lastFocused = active;
     state.modal = Object.assign({ name }, props);
-    render();
+    render({ modalOnly: true });
   }
-  const closeModal = () => { state.modal = null; render(); };
+  const closeModal = () => { state.modal = null; render({ modalOnly: true }); };
 
   // Aplica uma alteração e fecha o modal: o fim de quase todo "Salvar".
   function commit(mutate) {
@@ -302,15 +312,24 @@
   }
   function startQueue() { state.ui.queueDone = []; nextInQueue(); }
 
-  // Aviso curto na base da tela, com "Desfazer" opcional.
-  function toast(msg, undo) {
+  // Aviso curto na base da tela.
+  function toast(msg) {
     let root = document.getElementById('toast-root');
     if (!root) { root = document.createElement('div'); root.id = 'toast-root'; document.body.appendChild(root); }
     clearTimeout(toast.t);
-    const hide = () => { root.innerHTML = ''; };
-    root.innerHTML = `<div class="toast"><span>${esc(msg)}</span>${undo ? '<button type="button" class="toast-undo">Desfazer</button>' : ''}</div>`;
-    if (undo) root.querySelector('.toast-undo').onclick = () => { hide(); undo(); };
-    toast.t = setTimeout(hide, 6000);
+    root.innerHTML = `<div class="toast"><span>${esc(msg)}</span></div>`;
+    toast.t = setTimeout(() => { root.innerHTML = ''; }, 6000);
+  }
+
+  // ---------- CICLO DE VIDA DO MODAL ----------
+  // wire() costuma registrar listeners no document (paste, upload etc.). Sem
+  // isso, trocar de modal deixava ouvintes presos apontando para o DOM antigo.
+  let modalCleanups = [];
+  const onModalCleanup = (fn) => { if (typeof fn === 'function') modalCleanups.push(fn); };
+  function cleanupModal() {
+    const fns = modalCleanups;
+    modalCleanups = [];
+    fns.forEach((fn) => { try { fn(); } catch (e) { /* melhor esforço */ } });
   }
 
   // ---------- RENDER ----------
@@ -320,30 +339,64 @@
     try { localStorage.setItem('sc-dark', state.isDark ? '1' : '0'); } catch (e) { /* ignora */ }
   }
 
-  function render() {
-    const keys = Object.keys(SC.screens);
-    if (!SC.screens[state.ui.screen]) state.ui.screen = keys[0];
-
-    document.getElementById('nav-tabs').innerHTML = keys.map((k) => `
-      <button type="button" class="nav-tab${state.ui.screen === k ? ' active' : ''}" data-action="set" data-key="screen" data-value="${k}">
-        ${icon(SC.screens[k].icon)}${esc(SC.screens[k].label)}
-      </button>`).join('');
-    SC.renderSyncStatus();
+  // render({ screenOnly }) / render({ modalOnly }) evitam recriar o que não
+  // mudou — importante porque remontar o modal reinicia wire(), PDF e uploads.
+  function render(opts) {
+    opts = opts || {};
     const d = SC.getDerived(state); // calculado uma vez por redesenho
-    document.getElementById('screen').innerHTML = SC.screens[state.ui.screen].render(d);
+    if (!opts.modalOnly) {
+      const keys = Object.keys(SC.screens);
+      if (!SC.screens[state.ui.screen]) state.ui.screen = keys[0];
 
-    const root = document.getElementById('modal-root');
-    const m = state.modal;
-    const spec = m && SC.modals[m.name] ? SC.modals[m.name](m, d) : null;
-    if (!spec) { state.modal = null; root.innerHTML = ''; return; }
-    root.innerHTML = modalShell(spec.title, spec.body, spec.wide);
-    if (spec.wire) spec.wire();
+      document.getElementById('nav-tabs').innerHTML = keys.map((k) => `
+        <button type="button" class="nav-tab${state.ui.screen === k ? ' active' : ''}" data-action="set" data-key="screen" data-value="${k}">
+          ${icon(SC.screens[k].icon)}${esc(SC.screens[k].label)}
+        </button>`).join('');
+      SC.renderSyncStatus();
+      document.getElementById('screen').innerHTML = SC.screens[state.ui.screen].render(d);
+    }
+    if (!opts.screenOnly) {
+      const root = document.getElementById('modal-root');
+      cleanupModal();
+      const m = state.modal;
+      const spec = m && SC.modals[m.name] ? SC.modals[m.name](m, d) : null;
+      if (!spec) {
+        state.modal = null;
+        root.innerHTML = '';
+        if (lastFocused && lastFocused.isConnected) lastFocused.focus();
+        lastFocused = null;
+        return;
+      }
+      root.innerHTML = modalShell(spec.title, spec.body, spec.wide);
+      if (spec.wire) spec.wire();
+
+      // Foco inicial no campo do formulário + Tab preso dentro do diálogo.
+      const dialog = root.querySelector('.modal');
+      if (dialog) {
+        const focusables = () => Array.from(dialog.querySelectorAll('button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+          .filter((el) => el.getClientRects().length > 0);
+        const items = focusables();
+        const field = items.find((el) => /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName));
+        if (field || items[0]) (field || items[0]).focus();
+        else { dialog.tabIndex = -1; dialog.focus(); }
+        const trap = (e) => {
+          if (e.key !== 'Tab') return;
+          const list = focusables();
+          if (!list.length) { e.preventDefault(); return; }
+          const first = list[0], last = list[list.length - 1];
+          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+          else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        };
+        dialog.addEventListener('keydown', trap);
+        onModalCleanup(() => dialog.removeEventListener('keydown', trap));
+      }
+    }
   }
 
   Object.assign(SC, {
     icon, chip, button, screenHeader, emptyState, tabs, logCard, cardMain, cardList,
     subjectFilterOptions, applyFilters, filterBar, dueBadge,
     inputField, selectControl, selectField, subjectField, choice, ratingRow, formActions, errorBox,
-    bindForm, openModal, closeModal, commit, applyTheme, render, toast, startQueue,
+    bindForm, openModal, closeModal, commit, applyTheme, render, toast, startQueue, onModalCleanup,
   });
 })();

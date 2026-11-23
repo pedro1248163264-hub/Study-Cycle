@@ -45,6 +45,7 @@ const EXTERNAL_ORIGINS = [
 
 // KaTeX (gabarito com LaTeX): baixado na instalação junto com as fontes que o
 // CSS referencia, para a formatação funcionar offline depois da 1ª visita.
+// Atenção: manter a mesma versão em js/math.js (VERSION).
 const MATH_ASSETS = [
   'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css',
   'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js',
@@ -73,7 +74,9 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE).then(async (cache) => {
       await Promise.all(APP_FILES.map((url) =>
-        fetch(url, { cache: 'reload' }).then((res) => (res.ok ? cache.put(url, res) : null))));
+        fetch(url, { cache: 'reload' })
+          .then((res) => (res.ok ? cache.put(url, res) : null))
+          .catch(() => null)));
       await Promise.race([
         prefetchMath(cache),
         new Promise((resolve) => setTimeout(resolve, 8000)),
@@ -88,6 +91,21 @@ self.addEventListener('activate', (event) => {
     caches.keys()
       // Apaga caches de versões antigas (study-cycle-v1, -v2, ...).
       .then((names) => Promise.all(names.filter((n) => n !== CACHE && n.startsWith('study-cycle')).map((n) => caches.delete(n))))
+      // Também remove entradas órfãs do próprio cache (arquivo renomeado ou
+      // versão antiga do KaTeX), que a estratégia rede-primeiro não apagaria.
+      .then(() => caches.open(CACHE))
+      .then((cache) => cache.keys().then((reqs) => {
+        const keep = new Set(APP_FILES.concat(MATH_ASSETS).map((u) => new URL(u, self.location.href).href));
+        const stale = reqs.filter((r) => {
+          const href = new URL(r.url).href;
+          if (keep.has(href)) return false;
+          // Mantém fontes/OCR vindos da rede, mas descarta versões antigas do
+          // KaTeX: o CDN inteiro não pode ficar na lista de preservados.
+          if (href.indexOf('/katex@') !== -1) return true;
+          return !EXTERNAL_ORIGINS.some((o) => href.indexOf(o) === 0);
+        });
+        return Promise.all(stale.map((r) => cache.delete(r)));
+      }))
       .then(() => self.clients.claim())
   );
 });
@@ -97,7 +115,7 @@ function networkFirst(req, { timeout }) {
   const fromNetwork = fetch(req.mode === 'navigate' ? req.url : req, { cache: 'no-cache' }).then((res) => {
     if (res.ok) {
       const copy = res.clone();
-      caches.open(CACHE).then((cache) => cache.put(req.mode === 'navigate' ? './index.html' : req, copy));
+      caches.open(CACHE).then((cache) => cache.put(req.mode === 'navigate' ? './index.html' : req, copy)).catch(() => null);
     }
     return res;
   });

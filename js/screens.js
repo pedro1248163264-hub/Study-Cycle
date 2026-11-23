@@ -227,9 +227,6 @@
   // ---------- REVISÃO: LISTAS DE EXERCÍCIOS + QUESTÕES ----------
   const typeTag = (iconName, label) => `<span class="rev-type-tag">${icon(iconName)}${label}</span>`;
 
-  // Resposta de "como foi?" ao refazer uma lista (mesma nota 1/3/5 das questões).
-  const LIST_RESULT = { wrong: 'Foi mal', hard: 'Mais ou menos', easy: 'Foi bem' };
-
   const redoChip = (q) => chip('Refazer', 'repeat', 'modal', { modal: 'redo', id: q.id });
   const listRedoChip = (l) => chip(l.progress ? 'Continuar' : 'Refazer', 'repeat', 'modal', { modal: 'listRedo', id: l.id });
 
@@ -376,7 +373,10 @@
 
   function reviewScreen() {
     const tab = state.ui.reviewTab;
-    const today = reviewTodayHtml();
+    // reviewTodayHtml() varre todas as listas duas vezes: só precisa rodar
+    // quando a aba Hoje está visível. Nas outras, a fila memoizada dá a contagem.
+    const today = tab === 'today' ? reviewTodayHtml() : null;
+    const dueCount = today ? today.dueCount : SC.reviewQueue(state).length;
     const activeQuestions = state.questionBank.filter((q) => !q.retired).length;
     const body = tab === 'lists' ? reviewListsHtml() : tab === 'questions' ? reviewQuestionsHtml() : today.html;
     const stat = (num, label, due) => `
@@ -388,7 +388,7 @@
     return `<div class="screen">
       ${screenHeader('Revisão', 'Listas de exercícios e questões voltam em ciclo; toda vez você diz como foi.', button('Adicionar lista', 'plus', 'modal', { modal: 'exerciseList' }))}
       <div class="review-stats-row">
-        ${stat(today.dueCount, 'Para revisar hoje', today.dueCount > 0)}
+        ${stat(dueCount, 'Para revisar hoje', dueCount > 0)}
         ${stat(state.exerciseLists.length, 'Listas no ciclo')}
         ${stat(activeQuestions, 'Questões no banco')}
       </div>
@@ -405,7 +405,7 @@
 
   // ---------- SIMULADOS ----------
   function mockScreen() {
-    const exams = state.mockExams.slice().sort((a, b) => b.date.localeCompare(a.date));
+    const exams = state.mockExams.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
     const pct = (c, t) => (t ? Math.round((100 * c) / t) : 0);
     const total = (e) => pct(e.rows.reduce((s, r) => s + r.correct, 0), e.rows.reduce((s, r) => s + r.total, 0));
     const list = exams.length === 0
@@ -416,7 +416,7 @@
           main: cardMain({
             meta: [`<span class="error-badge error-badge-violet">${total(e)}%</span>`, d === null ? '' : `<span class="log-card-subject">${d >= 0 ? '+' : ''}${d} pp vs. anterior</span>`],
             title: e.name,
-            detail: [e.date].concat(e.rows.map((r) => `${esc(r.subject)} ${pct(r.correct, r.total)}%`)).concat(e.minutes ? [e.minutes + ' min'] : []).join(' · '),
+            detail: [e.date].concat(e.rows.map((r) => `${r.subject} ${pct(r.correct, r.total)}%`)).concat(e.minutes ? [e.minutes + ' min'] : []).join(' · '),
           }),
           actions: [chip('Excluir', 'trash', 'remove', { col: 'mockExams', id: e.id, confirm: 'Excluir este simulado?' }, 'danger')],
         });
@@ -432,5 +432,5 @@
   SC.screens['question-review'] = { label: 'Revisão', icon: 'repeat', render: reviewScreen };
   SC.screens.mocks = { label: 'Simulados', icon: 'target', render: mockScreen };
 
-  Object.assign(SC, { plural, STUDY_CATEGORIES, CATEGORY_LABEL, CATEGORY_ICON, LIST_RESULT, scoreText, studyLogCard, pendingReviewCards });
+  Object.assign(SC, { plural, STUDY_CATEGORIES, CATEGORY_LABEL, CATEGORY_ICON, scoreText, studyLogCard, pendingReviewCards });
 })();

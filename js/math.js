@@ -12,6 +12,8 @@
   const SC = window.SC;
   const esc = SC.esc;
 
+  // Atenção: manter a mesma versão em sw.js (MATH_ASSETS), senão o cache
+  // offline guarda arquivos diferentes dos que esta página carrega.
   const VERSION = '0.16.11';
   const BASE = 'https://cdn.jsdelivr.net/npm/katex@' + VERSION + '/dist';
   const CSS_URL = BASE + '/katex.min.css';
@@ -129,7 +131,6 @@
   }
 
   SC.formatAnswer = formatAnswer;
-  SC.loadMath = loadMath;
   // Só vale prévia quando há marcação matemática de verdade; texto comum
   // continua apenas dentro do campo (evita a "duplicação" abaixo do input).
   SC.hasMath = (value) => splitMath(String(value == null ? '' : value)) !== null;

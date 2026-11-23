@@ -56,7 +56,7 @@
 
     // Interface (nunca persistido)
     modal: null,       // { name, id?, ...dados do botão que abriu }
-    sync: { status: 'idle', direction: null, error: null },
+    sync: { status: 'idle', direction: null, error: null, storageError: null },
     ui: {
       screen: 'dashboard',
       queueDone: [],           // ids já abertos na rodada "Começar revisões"
@@ -116,7 +116,17 @@
       lastModifiedAt: state.lastModifiedAt,
       lastSyncedAt: state.lastSyncedAt,
     });
-    db().then((d) => d.transaction(STORE, 'readwrite').objectStore(STORE).put(data, KEY)).catch(() => {});
+    // Espera o fim da transação: um `put` que depois aborta não conta como salvo.
+    // Falha de cota/permissão precisa aparecer na interface, nunca ser engolida.
+    db().then((d) => new Promise((resolve, reject) => {
+      const tx = d.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).put(data, KEY);
+      tx.oncomplete = resolve;
+      tx.onerror = tx.onabort = () => reject(tx.error);
+    })).then(() => { state.sync.storageError = null; }, (err) => {
+      state.sync.storageError = (err && err.message) || 'Falha ao gravar neste aparelho';
+      if (SC.renderSyncStatus) SC.renderSyncStatus();
+    });
     if (!opts.skipStatus && SC.renderSyncStatus) SC.renderSyncStatus();
   }
 
@@ -129,30 +139,22 @@
   }
 
   // ---------- ARQUIVOS (PDFs das listas) ----------
-  // Ficam num armário separado do estado e NÃO são sincronizados: o estado
-  // inteiro vai como um único JSON para a nuvem, então um PDF ali dentro
-  // seria reenviado a cada sincronização. Só os metadados (nome, tamanho)
-  // moram no item da lista; o arquivo mora aqui, indexado pelo id da lista.
+  // LEGADO (v15/v16): PDFs antigos ficaram neste armário separado e NÃO são
+  // sincronizados (o estado inteiro vai como um único JSON para a nuvem).
+  // Hoje o upload é direto para a nuvem; aqui só restam get/remove para
+  // migrar/resgatar o que ficou salvo em versões anteriores.
   const files = {
-    put(id, file) {
-      return new Promise((resolve, reject) => {
-        const fr = new FileReader();
-        fr.onload = () => resolve(fr.result);
-        fr.onerror = () => reject(fr.error);
-        fr.readAsArrayBuffer(file);
-      }).then((data) => db().then((d) => new Promise((resolve, reject) => {
-        const tx = d.transaction(FILES, 'readwrite');
-        tx.objectStore(FILES).put({ name: file.name, type: 'application/pdf', data }, id);
-        tx.oncomplete = resolve;
-        tx.onerror = tx.onabort = () => reject(tx.error);
-      })));
-    },
     get: (id) => db().then((d) => new Promise((resolve) => {
       const req = d.transaction(FILES, 'readonly').objectStore(FILES).get(id);
       req.onsuccess = () => resolve(req.result || null);
       req.onerror = () => resolve(null);
     })).catch(() => null),
-    remove: (id) => db().then((d) => { d.transaction(FILES, 'readwrite').objectStore(FILES).delete(id); }).catch(() => {}),
+    remove: (id) => db().then((d) => new Promise((resolve) => {
+      const tx = d.transaction(FILES, 'readwrite');
+      tx.objectStore(FILES).delete(id);
+      tx.oncomplete = resolve;
+      tx.onerror = tx.onabort = resolve; // melhor esforço: limpeza de resquício antigo
+    })).catch(() => null),
   };
 
   // ---------- COLEÇÕES (matérias, logs, erros, tópicos, questões) ----------
@@ -180,5 +182,5 @@
   // Escapa texto para HTML — serve também para dentro de atributos.
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ESC[c]);
 
-  Object.assign(SC, { state, SYNCED, DEFAULT_SETTINGS, applyData, pickSyncable, saveState, loadState, col, files, uid, esc });
+  Object.assign(SC, { state, applyData, pickSyncable, saveState, loadState, col, files, uid, esc });
 })();

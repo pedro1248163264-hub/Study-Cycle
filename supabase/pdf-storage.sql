@@ -38,7 +38,7 @@ create or replace function public.pdf_grant(p_code text, p_path text, p_op text)
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $$
 begin
   perform public.get_app_state(p_code);   -- levanta "invalid code" se a senha estiver errada
@@ -59,7 +59,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = ''
 as $$
   select exists (
     select 1 from public.pdf_grants

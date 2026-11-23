@@ -36,7 +36,6 @@
   const TESSERACT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
   let tesseractLoading = null;
   let workerPromise = null;
-  let progressCb = null;
 
   function loadTesseract() {
     if (window.Tesseract) return Promise.resolve(window.Tesseract);
@@ -54,9 +53,9 @@
 
   function getWorker() {
     if (!workerPromise) {
-      workerPromise = loadTesseract().then((T) => T.createWorker('por', 1, {
-        logger: (m) => { if (progressCb) progressCb(m); },
-      }));
+      // Worker sem logger fixo: cada runOcr passa o seu próprio callback,
+      // senão dois OCRs simultâneos trocavam mensagens de progresso.
+      workerPromise = loadTesseract().then((T) => T.createWorker('por', 1));
       workerPromise.catch(() => { workerPromise = null; });
     }
     return workerPromise;
@@ -80,7 +79,10 @@
         if (objUrl) URL.revokeObjectURL(objUrl);
         resolve(canvas);
       };
-      img.onerror = reject;
+      img.onerror = () => {
+        if (objUrl) URL.revokeObjectURL(objUrl);
+        reject(new Error('Não foi possível ler a imagem.'));
+      };
       if (typeof source === 'string') img.src = source;
       else { objUrl = URL.createObjectURL(source); img.src = objUrl; }
     });
@@ -104,13 +106,14 @@
   }
 
   function runOcr(source, onStatus) {
-    progressCb = (m) => {
-      if (m.status === 'recognizing text') onStatus(`Lendo o texto… ${Math.round((m.progress || 0) * 100)}%`);
-      else if (/loading|initializ/.test(m.status || '')) onStatus('Preparando o leitor (baixa só na 1ª vez)…');
+    const status = (msg) => { if (typeof onStatus === 'function') onStatus(msg); };
+    const logger = (m) => {
+      if (m.status === 'recognizing text') status(`Lendo o texto… ${Math.round((m.progress || 0) * 100)}%`);
+      else if (/loading|initializ/.test(m.status || '')) status('Preparando o leitor (baixa só na 1ª vez)…');
     };
-    onStatus('Preparando o leitor (baixa só na 1ª vez)…');
+    status('Preparando o leitor (baixa só na 1ª vez)…');
     return Promise.all([getWorker(), toOcrCanvas(source)])
-      .then(([worker, canvas]) => worker.recognize(canvas))
+      .then(([worker, canvas]) => worker.recognize(canvas, {}, logger))
       .then((res) => cleanOcrText(res && res.data ? res.data.text : ''));
   }
 

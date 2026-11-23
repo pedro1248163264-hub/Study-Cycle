@@ -18,9 +18,23 @@
   const SUPABASE_URL = 'https://rhipgkcoacrarablillj.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJoaXBna2NvYWNyYXJhYmxpbGxqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc4NzM4MjIsImV4cCI6MjEwMzQ0OTgyMn0.WfPALUnfcrwvibkb39cWh1_Vj-UdMm7lgFgiWj0u-5w';
   const CODE_KEY = 'studyCycleSyncCode'; // por aparelho, nunca sincronizado
+  const REQUEST_TIMEOUT_MS = 20000;
+  const STORAGE_TIMEOUT_MS = 60000; // PDFs de até 25 MB podem demorar mais
+
+  // Sem timeout, uma rede travada deixa o botão preso em "sincronizando" para sempre.
+  function fetchTimed(url, opts, ms) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms || REQUEST_TIMEOUT_MS);
+    return fetch(url, Object.assign({}, opts, { signal: controller.signal }))
+      .catch((err) => {
+        if (err && err.name === 'AbortError') throw new Error('Tempo limite na conexão. Tente de novo.');
+        throw err;
+      })
+      .finally(() => clearTimeout(timer));
+  }
 
   function callRpc(fnName, params) {
-    return fetch(SUPABASE_URL + '/rest/v1/rpc/' + fnName, {
+    return fetchTimed(SUPABASE_URL + '/rest/v1/rpc/' + fnName, {
       method: 'POST',
       headers: {
         apikey: SUPABASE_ANON_KEY,
@@ -56,10 +70,19 @@
 
   function performSync(code) {
     state.sync.status = 'syncing';
+    state.sync.error = null; // erro antigo não pode reaparecer depois de um sucesso
     renderSyncStatus();
 
     callRpc('get_app_state', { p_code: code }).then((rows) => {
-      const remote = rows && rows.length ? { data: rows[0].data, at: new Date(rows[0].updated_at).getTime() } : null;
+      const row = rows && rows.length ? rows[0] : null;
+      let remote = null;
+      if (row) {
+        const at = Date.parse(row.updated_at);
+        // NaN > localAt é false: sem esta checagem, uma resposta quebrada
+        // faria o app empurrar os dados locais por cima da nuvem.
+        if (!Number.isFinite(at)) throw new Error('A nuvem respondeu com uma data inválida; nada foi alterado.');
+        remote = { data: row.data, at };
+      }
       const localAt = state.lastModifiedAt || 0;
 
       if (remote && remote.at > localAt) {
@@ -90,7 +113,7 @@
       }
     }).then(() => uploadPending().then((n) => {
       // Gravou list.pdf.path: é alteração local nova, então sincroniza de novo (1 vez).
-      if (n) { saveState(); performSync(code); }
+      if (n) { saveState(); return performSync(code); }
     })).catch((err) => {
       state.sync.status = 'error';
       if (err && err.isInvalidCode) {
@@ -109,7 +132,7 @@
   // liberação de 10 min para AQUELE arquivo (função pdf_grant, que confere
   // a senha de sincronização). Setup: supabase/pdf-storage.sql.
   const BUCKET = 'list-pdfs';
-  const storageUrl = (path, authed) => SUPABASE_URL + '/storage/v1/object/' + (authed ? 'authenticated/' : '') + BUCKET + '/' + path;
+  const storageUrl = (path, authed) => SUPABASE_URL + '/storage/v1/object/' + (authed ? 'authenticated/' : '') + BUCKET + '/' + encodeURIComponent(path);
   const storageHeaders = () => ({ apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + SUPABASE_ANON_KEY });
 
   function grant(path, op) {
@@ -141,13 +164,13 @@
       const fd = new FormData();
       fd.append('cacheControl', '3600');
       fd.append('', file, file.name || 'lista.pdf');
-      return fetch(storageUrl(path, false), { method: 'POST', headers: storageHeaders(), body: fd });
+      return fetchTimed(storageUrl(path, false), { method: 'POST', headers: storageHeaders(), body: fd }, STORAGE_TIMEOUT_MS);
     }).then((res) => (res.ok ? path : storageFail(res)));
   }
 
   function downloadPdf(path) {
     return grant(path, 'read')
-      .then(() => fetch(storageUrl(path, true), { headers: storageHeaders(), cache: 'no-store' }))
+      .then(() => fetchTimed(storageUrl(path, true), { headers: storageHeaders(), cache: 'no-store' }, STORAGE_TIMEOUT_MS))
       .then((res) => (res.ok ? res.blob() : storageFail(res)));
   }
 
@@ -155,7 +178,7 @@
   function removePdf(path) {
     if (!path) return Promise.resolve(false);
     return grant(path, 'delete')
-      .then(() => fetch(storageUrl(path, false), { method: 'DELETE', headers: storageHeaders() }))
+      .then(() => fetchTimed(storageUrl(path, false), { method: 'DELETE', headers: storageHeaders() }, STORAGE_TIMEOUT_MS))
       .then((res) => res.ok)
       .catch(() => false);
   }
@@ -165,19 +188,18 @@
   function uploadPending() {
     const todo = state.exerciseLists.filter((l) => l.pdf);
     let done = 0;
-    return todo.reduce((chain, l) => chain.then((ok) => {
-      if (!ok) return false;
-      return SC.files.get(l.id).then((rec) => {
-        if (!rec) return true;                                   // nada guardado aqui
-        if (l.pdf.path) return SC.files.remove(l.id).then(() => true); // já está na nuvem: descarta a cópia
-        const file = new File([rec.data], rec.name || l.pdf.name || 'lista.pdf', { type: 'application/pdf' });
-        return uploadPdf(file).then((path) => {
-          SC.col.patch('exerciseLists', l.id, { pdf: Object.assign({}, l.pdf, { path }) });
-          done++;
-          return SC.files.remove(l.id).then(() => true);
-        });
-      }).catch(() => false); // sem internet/senha: tenta no próximo sync
-    }), Promise.resolve(true)).then(() => done);
+    // Sequencial (não dispara dezenas de uploads de 25 MB ao mesmo tempo),
+    // mas um arquivo que falha não impede os próximos: tenta no próximo sync.
+    return todo.reduce((chain, l) => chain.then(() => SC.files.get(l.id).then((rec) => {
+      if (!rec) return;                                   // nada guardado aqui
+      if (l.pdf.path) return SC.files.remove(l.id);       // já está na nuvem: descarta a cópia
+      const file = new File([rec.data], rec.name || l.pdf.name || 'lista.pdf', { type: 'application/pdf' });
+      return uploadPdf(file).then((path) => {
+        SC.col.patch('exerciseLists', l.id, { pdf: Object.assign({}, l.pdf, { path }) });
+        done++;
+        return SC.files.remove(l.id);
+      });
+    }).catch(() => null)), Promise.resolve()).then(() => done);
   }
 
   // Atualiza só o botão + linha de status do cabeçalho (barato após cada edição).
@@ -190,8 +212,14 @@
     const s = state.sync;
     const hasPending = (state.lastModifiedAt || 0) > (state.lastSyncedAt || 0);
     btn.classList.toggle('is-syncing', s.status === 'syncing');
-    dot.hidden = !hasPending || s.status === 'syncing';
-    statusEl.classList.toggle('is-error', s.status === 'error');
+    if (dot) dot.hidden = !hasPending || s.status === 'syncing';
+    statusEl.classList.toggle('is-error', s.status === 'error' || !!s.storageError);
+
+    // Falha de escrita local tem prioridade: sem isso o app parecia salvo.
+    if (s.storageError) {
+      statusEl.innerHTML = `${ICONS.cloudOff}Erro ao salvar neste aparelho: ${esc(s.storageError)}`;
+      return;
+    }
 
     const R = ICONS.refreshCw;
     if (s.status === 'syncing') {
@@ -212,6 +240,6 @@
   Object.assign(SC, {
     syncNow, performSync, renderSyncStatus,
     sync: { codeExists, claimCode, setCode },
-    cloud: { upload: uploadPdf, download: downloadPdf, remove: removePdf, uploadPending },
+    cloud: { upload: uploadPdf, download: downloadPdf, remove: removePdf },
   });
 })();
