@@ -1757,16 +1757,34 @@ html.dark .gab-hit { background-color: rgba(16, 185, 129, 0.15); border-color: r
 html.dark .gab-miss { background-color: rgba(225, 29, 72, 0.15); border-color: rgba(251, 113, 133, 0.4); color: #FDA4AF; }
 
 /* v30: gabarito com LaTeX/MathJax (KaTeX) */
-.gab-cell { min-width: 0; }
-.gab-preview { font-size: 0.8125rem; line-height: 1.4; padding: 0.25rem 0.375rem; color: inherit; overflow-x: auto; overflow-y: hidden; }
+/* v30.1: a prévia (KaTeX ou texto) fica presa ao seu próprio retângulo. Sem
+   min-width:0, itens de grid/flex deixam o conteúdo nowrap do KaTeX vazar. */
+.gab-cell { min-width: 0; max-width: 100%; }
+.gab-row { min-width: 0; }
+.gab-row .text-input { flex: 1 1 auto; width: 100%; min-width: 0; }
+.gab-preview {
+  display: block;
+  max-width: 100%;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  padding: 0.25rem 0.375rem;
+  color: inherit;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+}
 .gab-preview:empty { display: none; }
-.math-pending { white-space: pre-wrap; }
+.math-pending { display: inline-block; max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
+.gab-hit { min-width: 0; max-width: 100%; overflow-x: auto; }
+.gab-hit-val { flex: 1 1 auto; min-width: 0; }
+.review-answer-key { min-width: 0; }
+.review-answer-key-value { flex: 1 1 auto; min-width: 0; }
 .gab-hit-val .katex-display,
 .review-answer-key-value .katex-display,
-.gab-preview .katex-display { margin: 0.25em 0; overflow-x: auto; overflow-y: hidden; }
+.gab-preview .katex-display { margin: 0.25em 0; max-width: 100%; overflow-x: auto; overflow-y: hidden; }
 .gab-hit-val .katex,
 .review-answer-key-value .katex,
-.gab-preview .katex { color: inherit; }
+.gab-preview .katex { color: inherit; max-width: 100%; }
 html.dark .katex-error { color: #FCA5A5; }
 
 /* Aviso curto (toast) com "Desfazer" */

@@ -706,7 +706,7 @@
             <div class="gab-cell">
               <label class="gab-row"><span>${esc(k)}</span>
                 <input class="text-input" type="text" data-k="${esc(k)}" maxlength="500" autocomplete="off" value="${esc(vis[k] || '')}"></label>
-              ${vis[k] ? `<div class="gab-preview">${SC.formatAnswer(vis[k])}</div>` : ''}
+              <div class="gab-preview">${vis[k] ? SC.formatAnswer(vis[k]) : ''}</div>
             </div>`).join('');
         }
         // Prévia da fórmula enquanto você digita (sem precisar salvar).

@@ -18,21 +18,28 @@
   const JS_URL = BASE + '/katex.min.js';
 
   let loading = null;
+  let mathReady = false; // CSS + JS carregados: só então é seguro injetar o HTML do KaTeX
 
   // Carrega uma vez só. CSS e JS precisam estar prontos antes de renderizar.
+  // Se o CSS falhar, NÃO renderizamos: sem as regras do KaTeX o MathML de
+  // acessibilidade fica visível e os spans soltos "escapam" do retângulo da resposta.
   function loadMath() {
-    if (window.katex) return Promise.resolve(window.katex);
+    if (mathReady && window.katex) return Promise.resolve(window.katex);
     if (!loading) {
       loading = new Promise((resolve, reject) => {
         let cssOk = false, jsOk = false;
-        const ready = () => { if (cssOk && jsOk && window.katex) resolve(window.katex); };
-        const fail = () => { loading = null; reject(new Error('katex-load-failed')); };
+        const ready = () => {
+          if (!cssOk || !jsOk || !window.katex) return;
+          mathReady = true;
+          resolve(window.katex);
+        };
+        const fail = () => reject(new Error('katex-load-failed'));
         const link = document.createElement('link');
         link.rel = 'stylesheet';
         link.crossOrigin = 'anonymous'; // mesmo modo da requisição pré-cacheada pelo Service Worker
         link.href = CSS_URL;
         link.onload = () => { cssOk = true; ready(); };
-        link.onerror = () => { cssOk = true; ready(); }; // sem CSS ainda renderiza, só fica sem fonte própria
+        link.onerror = fail; // sem CSS, mantém o texto simples (não injeta HTML solto)
         document.head.appendChild(link);
         const script = document.createElement('script');
         script.crossOrigin = 'anonymous';
@@ -41,7 +48,7 @@
         script.onerror = fail;
         document.head.appendChild(script);
       });
-      loading.catch(() => {}); // sem internet: o texto simples continua aparecendo
+      loading.catch(() => {}); // sem internet/CSS: o texto simples continua aparecendo
     }
     return loading;
   }
@@ -90,6 +97,7 @@
   // Depois que a biblioteca chega, troca o texto provisório pelo renderizado
   // sem redesenhar o modal (evita perder o que a pessoa estava digitando).
   function hydrate() {
+    if (!mathReady || !window.katex) return;
     document.querySelectorAll('[data-math-raw]').forEach((el) => {
       el.innerHTML = formatAnswer(el.getAttribute('data-math-raw'));
       el.removeAttribute('data-math-raw');
@@ -102,8 +110,8 @@
     const text = String(value == null ? '' : value);
     const parts = splitMath(text);
     if (!parts) return esc(text);
-    if (!window.katex) {
-      loadMath().then(hydrate);
+    if (!mathReady || !window.katex) {
+      loadMath().then(hydrate, () => {}); // mantém o texto simples enquanto carrega — ou se falhar
       return '<span class="math-pending" data-math-raw="' + esc(text) + '">' + esc(text) + '</span>';
     }
     return renderParts(parts);

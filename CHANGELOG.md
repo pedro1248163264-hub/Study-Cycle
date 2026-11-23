@@ -1,5 +1,16 @@
 # Changelog
 
+## [v30.1] — Correção: prévia do gabarito não escapa mais do retângulo
+
+### Corrigido
+- Em “Refazer lista” > “Editar gabarito”, a prévia formatada podia aparecer fora do campo da resposta. Agora o HTML do KaTeX só é injetado quando o CSS **e** o JS da biblioteca carregaram: se o CSS falhar, o texto simples continua visível, sem MathML/spans soltos voando pela tela.
+- Contenção adicional nas células do gabarito, na busca “Ver” e no gabarito de questões (`min-width: 0`, rolagem horizontal dentro do próprio retângulo), para fórmulas longas nunca vazarem para os lados.
+- A prévia em tempo real também aparece em campos que estavam vazios (antes só surgia depois de salvar).
+
+### Arquivos
+`js/math.js`, `js/modals.js`, `css/styles.css`.
+
+---
 ## [v30] — Gabarito com LaTeX/MathJax
 
 ### Adicionado
