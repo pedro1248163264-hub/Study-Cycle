@@ -268,12 +268,12 @@
         <div class="field">
           <label>Exercícios</label>
           <div class="list-score-add">
-            <input class="text-input" type="text" data-ex-quick autocomplete="off" placeholder="vários: 1-5; 7; 9a-c">
+            <input class="text-input" type="text" data-ex-quick autocomplete="off" placeholder="ex: 1-5; 7; 9a-c; 1a: 3; 2c: 14">
             <button type="button" class="btn-chip" data-ex-quick-add>Adicionar</button>
           </div>
           <p class="field-help" data-ex-quick-msg role="alert" style="color:#E11D48;display:none"></p>
           <div class="ex-rows" data-ex-rows>${rows.map(exRow).join('')}${exRow()}</div>
-          <p class="field-help">Digite o número do exercício (7, 23a) e a resposta do gabarito, se tiver. Uma linha nova aparece sozinha e não precisa seguir a ordem: pule o que não fez. “Revisar” marcado = entra na fila de revisão; desmarcado = guarda só a resposta no gabarito.</p>
+          <p class="field-help">No campo acima, cole vários de uma vez: <strong>1-5; 7; 9a-c; 1a: 3; 2c: 14</strong>. O que vem depois dos dois pontos é o gabarito (vai até o ponto e vírgula); <strong>6;</strong> ou <strong>6: ;</strong> cadastra o 6 sem gabarito. Ou preencha linha por linha abaixo: uma linha nova aparece sozinha, a ordem é livre e você pode pular o que não fez. “Revisar” marcado = entra na fila de revisão; desmarcado = guarda só a resposta no gabarito.</p>
         </div>
         ${inputField({ name: 'notes', label: 'Observações (opcional)', value: l ? l.notes || '' : '', rows: 3, placeholder: 'Onde está a lista, página, link…' })}
         ${l ? '' : '<p class="field-help">A lista entra na fila de hoje. Depois de refazê-la, o app pergunta como foi e agenda a próxima vez.</p>'}
@@ -331,17 +331,27 @@
           const next = row.nextElementSibling;
           if (next) next.querySelector('[data-ex="key"]').focus();
         });
-        // Vários de uma vez: "1-5; 7; 9a-c" vira uma linha por exercício (sem repetir os que já existem).
+        // Vários de uma vez: "1-5; 7; 9a-c; 1a: 3; 2c: 14" vira uma linha por
+        // exercício, com gabarito quando houver resposta depois dos dois pontos.
         function quickAdd() {
-          const r = SC.parseExerciseKeys(quickEl.value);
+          const r = SC.parseExerciseEntries(quickEl.value);
           const say = (t) => { quickMsg.textContent = t; quickMsg.style.display = t ? '' : 'none'; };
-          if (r.invalid.length) { say(`Não entendi: ${r.invalid.join(', ')}. Use por exemplo 1-5; 7; 9a-c.`); return; }
-          if (!r.keys.length) { say('Digite os números, por exemplo 1-5; 7; 9a-c.'); return; }
+          const example = 'Use 1-5; 7; 9a-c; 1a: 3; 2c: 14 (dois pontos = gabarito).';
+          if (r.invalid.length) { say(`Não entendi: ${r.invalid.join(', ')}. ${example}`); return; }
+          if (!r.entries.length) { say(`Digite os exercícios, por exemplo 1-5; 7; 9a-c; 1a: 3; 2c: 14.`); return; }
           say('');
-          const have = new Set(readRows().map((x) => normKey(x.raw)));
+          const have = new Map();
+          readRows().forEach((x) => { const k = normKey(x.raw); if (k) have.set(k, x.el); });
           const last = rowsEl.lastElementChild;
           if (last && !last.querySelector('[data-ex="key"]').value.trim() && !last.querySelector('[data-ex="ans"]').value.trim()) last.remove();
-          r.keys.filter((k) => !have.has(k)).forEach((k) => rowsEl.insertAdjacentHTML('beforeend', exRow({ key: k, ans: '', rev: true })));
+          r.entries.forEach((e) => {
+            const row = have.get(e.key);
+            if (row) {
+              if (e.answer) row.querySelector('[data-ex="ans"]').value = e.answer;
+              return;
+            }
+            rowsEl.insertAdjacentHTML('beforeend', exRow({ key: e.key, ans: e.answer, rev: true }));
+          });
           ensureBlank();
           quickEl.value = '';
           form.sync();

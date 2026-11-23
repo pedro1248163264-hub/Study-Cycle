@@ -1,5 +1,14 @@
 # Changelog
 
+## [v28] — Gabarito no cadastro rápido de exercícios
+
+### Adicionado
+- Em Adicionar/Editar lista, o campo de cadastro rápido aceita o gabarito junto: `1a: 3; 2c: 14` cria as linhas com a resposta já preenchida. O que vem depois dos dois pontos é a resposta (até o `;`); `6;` ou `6: ;` cadastra o exercício sem gabarito. Intervalos (`1-5`, `9a-c`) continuam funcionando, e repetir uma chave com resposta atualiza o gabarito da linha existente.
+
+### Arquivos
+`js/logic.js`, `js/modals.js`.
+
+---
 ## [v27] — Lista sem "quantos exercícios"
 
 ### Alterado

@@ -269,6 +269,35 @@
     return { keys: keys.sort(compareKeys), invalid: Array.from(new Set(invalid)) };
   }
 
+  // Cadastro rápido com gabarito: "1-5; 7; 9a-c; 1a: 3; 2c: 14; 6: ; 8a".
+  // Cada bloco vai até ";" ou quebra de linha; "N: texto" é a resposta, e
+  // "N;" / "N: ;" (sem texto) cadastra o exercício sem gabarito.
+  function parseExerciseEntries(text, max) {
+    const byKey = new Map();
+    const invalid = [];
+    String(text || '').split(/[;\n]+/).forEach((chunk) => {
+      if (!chunk.trim()) return;
+      const sep = /[:=]/.exec(chunk);
+      const left = sep ? chunk.slice(0, sep.index) : chunk;
+      const answer = sep ? chunk.slice(sep.index + 1).trim().slice(0, 200) : '';
+      const r = parseExerciseKeys(left, max);
+      r.invalid.forEach((x) => invalid.push(x));
+      if (!r.keys.length) {
+        if (!r.invalid.length) invalid.push(chunk.trim().slice(0, 20));
+        return;
+      }
+      r.keys.forEach((k) => {
+        const found = byKey.get(k);
+        if (!found) byKey.set(k, { key: k, answer: answer });
+        else if (answer) found.answer = answer;
+      });
+    });
+    return {
+      entries: Array.from(byKey.values()).sort((a, b) => compareKeys(a.key, b.key)),
+      invalid: Array.from(new Set(invalid)),
+    };
+  }
+
   // Os exercícios da lista são os que VOCÊ cadastrou (list.keys), em qualquer ordem e
   // com buracos (pulou o 4? é só não cadastrar). Não existe "quantos exercícios a lista
   // tem". Sempre devolve um array ordenado (vazio = lista sem exercícios ainda).
@@ -572,7 +601,7 @@
   Object.assign(SC, {
     calculateAllocations, generateSequence, getDerived,
     GRADUATE_AFTER_N, sm2Step, applyQuestionRedo, applyListSession,
-    SESSION_MAX, dailyLimit, MAX_INTERVAL_DAYS, parseExerciseKeys, listScope, formatKeys, listItems, listDue, listNextAt, keyLabel, compareKeys,
+    SESSION_MAX, dailyLimit, MAX_INTERVAL_DAYS, parseExerciseKeys, parseExerciseEntries, listScope, formatKeys, listItems, listDue, listNextAt, keyLabel, compareKeys,
     visibleAnswers, parseAnswers, serializeAnswers,
     interleaveBySubject, reviewQueue, pendingReviews, calendarDayDiff, formatDate,
   });
