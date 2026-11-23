@@ -33,6 +33,7 @@ js/store.js         estado, IndexedDB, coleções (col.put/patch/remove), lista 
 js/logic.js         cálculo do ciclo e SM-2 (funções puras)
 js/sync.js          sincronização Supabase (última alteração vence)
 js/ocr.js           redimensionar imagem + OCR (Tesseract, baixado sob demanda)
+js/math.js          gabarito com LaTeX/MathJax (KaTeX, baixado sob demanda)
 js/ui.js            peças reutilizáveis: botões, cartões, filtros, abas, campos, bindForm
 js/screens.js       as 4 telas
 js/modals.js        todos os modais
@@ -64,6 +65,7 @@ Nome, categoria (Livro/Vídeo/Questões), status ativo/concluído, matéria opci
 ### Revisão
 Dois motores independentes com a mesma recorrência (SM-2 adaptado, ver CHANGELOG v22); a nota vem sempre do que você marca.
 - **Listas de exercícios**: você informa nome, matéria (opcional) e vai **cadastrando os exercícios** (número, ou 23a para itens; resposta do gabarito opcional; “Revisar” marcado = entra na fila). Não há total: as linhas aparecem conforme você digita, em qualquer ordem e pulando números. Cada exercício tem sua própria revisão e histórico de resultados. Ao refazer, marque o que **errou** (volta em **1 dia**) ou acertou **com dificuldade** (**2 dias**); o restante conta como tranquilo (**5 dias**, espalhados em 4–6 dias na primeira vez). Depois, cada exercício aumenta o próprio intervalo conforme seus acertos anteriores (teto de 180 dias). O atraso da lista não altera esse cálculo. A lista aparece como pendente se qualquer exercício venceu; ao abri-la, só os exercícios vencidos entram, errados primeiro. Para a carga não acumular, cada lista tem um **limite diário** (campo "Limite por dia"; padrão 10); o que passar disso fica para os próximos dias. Cada exercício pode ter **gabarito** (editando a lista ou direto na tela de refazer), por exercício (aparece para todo exercício que tem resposta). **A lista nunca sai do ciclo** — só você a exclui. Dá para anexar o **PDF da lista** (até 25 MB) e vê-lo no site, inclusive na hora de avaliar. O PDF vai para o **Supabase Storage** (bucket privado `list-pdfs`) e abre em qualquer aparelho (visualizador + abrir em outra aba + baixar). **Nada fica salvo no aparelho**: o PDF é baixado só para a tela e descartado ao fechar (precisa de internet para ver). Com a lista viajam só `pdf: { name, size, path }`. Setup único: rodar `supabase/pdf-storage.sql` no SQL Editor.
+- **Gabarito com matemática**: escreva a resposta com `$...$` (ou `\(...\)`, `$$...$$`) — ou só um comando como `\frac` — e ela aparece formatada ao refazer a lista ou a questão. Ex.: `1: $\frac{1}{2}$; 2: \sqrt{3}`. Sem marcação, a resposta continua sendo texto normal. O renderizador (KaTeX) é baixado na primeira vez e fica em cache para uso offline.
 - **Questões**: bookmark de questão (imagem e/ou texto); ao refazer: Errei / Difícil / Fácil (1/3/5). Erro volta em 1 dia; difícil em 3 dias; fácil começa em 5 dias e os próximos prazos dependem dos resultados anteriores. 4 acertos seguidos "graduam" a questão.
 - **Fila "Hoje"**: vencidos de ambos, em round-robin por matéria (interleaving).
 - Rodadas de fixação do mesmo dia **não** devem ser registradas (decisão de uso).

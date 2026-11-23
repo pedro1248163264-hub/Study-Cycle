@@ -236,7 +236,7 @@
     r = r || { key: '', ans: '', rev: true };
     return `<div class="ex-row" data-ex-row>
       <input class="text-input ex-key" type="text" data-ex="key" maxlength="6" autocomplete="off" autocapitalize="off" placeholder="Nº" aria-label="Exercício" value="${esc(r.key)}">
-      <input class="text-input ex-ans" type="text" data-ex="ans" maxlength="200" autocomplete="off" placeholder="Resposta (gabarito)" aria-label="Resposta do gabarito" value="${esc(r.ans)}">
+      <input class="text-input ex-ans" type="text" data-ex="ans" maxlength="500" autocomplete="off" placeholder="Resposta (gabarito)" aria-label="Resposta do gabarito" value="${esc(r.ans)}">
       <label class="ex-rev"><input type="checkbox" data-ex="rev"${r.rev ? ' checked' : ''}><span>Revisar</span></label>
       <button type="button" class="ex-del" data-ex="del" aria-label="Remover exercício">${icon('x', true)}</button>
     </div>`;
@@ -273,7 +273,7 @@
           </div>
           <p class="field-help" data-ex-quick-msg role="alert" style="color:#E11D48;display:none"></p>
           <div class="ex-rows" data-ex-rows>${rows.map(exRow).join('')}${exRow()}</div>
-          <p class="field-help">No campo acima, cole vários de uma vez: <strong>1-5; 7; 9a-c; 1a: 3; 2c: 14</strong>. O que vem depois dos dois pontos é o gabarito (vai até o ponto e vírgula); <strong>6;</strong> ou <strong>6: ;</strong> cadastra o 6 sem gabarito. Ou preencha linha por linha abaixo: uma linha nova aparece sozinha, a ordem é livre e você pode pular o que não fez. “Revisar” marcado = entra na fila de revisão; desmarcado = guarda só a resposta no gabarito.</p>
+          <p class="field-help">No campo acima, cole vários de uma vez: <strong>1-5; 7; 9a-c; 1a: 3; 2c: 14</strong>. O que vem depois dos dois pontos é o gabarito (vai até o ponto e vírgula); <strong>6;</strong> ou <strong>6: ;</strong> cadastra o 6 sem gabarito. Ou preencha linha por linha abaixo: uma linha nova aparece sozinha, a ordem é livre e você pode pular o que não fez. “Revisar” marcado = entra na fila de revisão; desmarcado = guarda só a resposta no gabarito. Respostas com matemática (ex.: <code>1: $\\frac{1}{2}$</code>) são formatadas ao refazer; sem marcação, ficam texto normal.</p>
         </div>
         ${inputField({ name: 'notes', label: 'Observações (opcional)', value: l ? l.notes || '' : '', rows: 3, placeholder: 'Onde está a lista, página, link…' })}
         ${l ? '' : '<p class="field-help">A lista entra na fila de hoje. Depois de refazê-la, o app pergunta como foi e agenda a próxima vez.</p>'}
@@ -555,7 +555,7 @@
             </div>
             <p class="field-help" data-role="gab-msg" role="alert" style="color:#E11D48;display:none"></p>
             <div class="gab-grid" data-role="gab-grid"></div>
-            <p class="field-help">Salva na hora, junto da lista. Aparecem os exercícios da lista e os que já têm resposta. Para um que não está aqui (ex.: 3b), use o campo de cima. Atenção: aqui as respostas ficam todas visíveis.</p>
+            <p class="field-help">Salva na hora, junto da lista. Aparecem os exercícios da lista e os que já têm resposta. Para um que não está aqui (ex.: 3b), use o campo de cima. Respostas com <code>$...$</code> ou comandos LaTeX ganham prévia formatada embaixo do campo. Atenção: aqui as respostas ficam todas visíveis.</p>
           </details>
         </details>
 
@@ -703,9 +703,20 @@
           const n = Object.keys(vis).length;
           gabCount.textContent = n ? `(${n} preenchido${n === 1 ? '' : 's'})` : '';
           gabGrid.innerHTML = keys.map((k) => `
-            <label class="gab-row"><span>${esc(k)}</span>
-              <input class="text-input" type="text" data-k="${esc(k)}" maxlength="200" autocomplete="off" value="${esc(vis[k] || '')}"></label>`).join('');
+            <div class="gab-cell">
+              <label class="gab-row"><span>${esc(k)}</span>
+                <input class="text-input" type="text" data-k="${esc(k)}" maxlength="500" autocomplete="off" value="${esc(vis[k] || '')}"></label>
+              ${vis[k] ? `<div class="gab-preview">${SC.formatAnswer(vis[k])}</div>` : ''}
+            </div>`).join('');
         }
+        // Prévia da fórmula enquanto você digita (sem precisar salvar).
+        gabGrid.addEventListener('input', (e) => {
+          const inp = e.target.closest('input[data-k]');
+          if (!inp) return;
+          const cell = inp.closest('.gab-cell');
+          const pv = cell && cell.querySelector('.gab-preview');
+          if (pv) pv.innerHTML = inp.value.trim() ? SC.formatAnswer(inp.value) : '';
+        });
         gabGrid.addEventListener('change', (e) => {
           const inp = e.target.closest('input[data-k]');
           if (!inp) return;
@@ -748,7 +759,7 @@
           const visKeys = Object.keys(vis).sort(SC.compareKeys);
           const rows = [];
           const seen = new Set();
-          const hit = (k) => { if (!seen.has(k)) { seen.add(k); rows.push(`<div class="gab-hit"><span class="gab-hit-key">${esc(k)}</span><span class="gab-hit-val">${esc(vis[k])}</span></div>`); } };
+          const hit = (k) => { if (!seen.has(k)) { seen.add(k); rows.push(`<div class="gab-hit"><span class="gab-hit-key">${esc(k)}</span><span class="gab-hit-val">${SC.formatAnswer(vis[k])}</span></div>`); } };
           const miss = (label) => rows.push(`<div class="gab-miss"><span class="gab-miss-sign" aria-hidden="true">✕</span><span>Sem gabarito para <strong>${esc(label)}</strong></span></div>`);
           r.keys.forEach((k) => {
             if (vis[k]) { hit(k); return; }
@@ -840,7 +851,7 @@
         ${inputField({ name: 'topic', label: 'Tópico (opcional)', value: v('topic'), placeholder: 'ex: Termoquímica', bold: true })}
         ${inputField({ name: 'statementText', label: 'Enunciado (opcional se anexar imagem)', value: v('statementText'), rows: 4, placeholder: 'Cole o enunciado, ou anexe a imagem abaixo e toque em “Extrair texto”' })}
         <div class="field"><label>Imagem (opcional se escreveu o enunciado)</label><div data-image-area="statement"></div></div>
-        ${inputField({ name: 'answerKey', label: 'Gabarito (opcional)', value: v('answerKey'), placeholder: 'ex: C, 42, Verdadeiro', bold: true, attrs: 'maxlength="200"' })}
+        ${inputField({ name: 'answerKey', label: 'Gabarito (opcional)', value: v('answerKey'), placeholder: 'ex: C, 42, $\\frac{1}{2}$', bold: true, attrs: 'maxlength="500"', help: 'Use $...$ (ou \\(...\\)) para fórmulas; sem marcação, fica texto normal.' })}
         ${inputField({ name: 'resolutionText', label: 'Resolução (opcional, texto)', value: v('resolutionText'), rows: 4, placeholder: 'Explique o passo a passo da resolução, se quiser' })}
         <div class="field"><label>Resolução (opcional, imagem)</label><div data-image-area="resolution"></div></div>
         ${formActions({ save: q ? 'Salvar alterações' : 'Salvar questão' })}`,
@@ -1002,7 +1013,7 @@
           ${(q.subject || q.topic) ? `<p class="field-help">${esc([q.subject, q.topic].filter(Boolean).join(' · '))}</p>` : ''}
         </div>
         ${reveal('answer', 'gabarito', m.answer, q.answerKey,
-          `<div class="review-answer-key"><span class="review-answer-key-label">Gabarito</span><span class="review-answer-key-value">${esc(q.answerKey)}</span></div>`)}
+          `<div class="review-answer-key"><span class="review-answer-key-label">Gabarito</span><span class="review-answer-key-value">${SC.formatAnswer(q.answerKey)}</span></div>`)}
         ${reveal('resolution', 'resolução', m.resolution, q.resolutionText || q.resolutionImageData,
           `<div class="review-resolution">
              <span class="review-answer-key-label">Resolução</span>

@@ -1,5 +1,19 @@
 # Changelog
 
+## [v30] — Gabarito com LaTeX/MathJax
+
+### Adicionado
+- Respostas do gabarito podem ser escritas com notação matemática: `$...$`, `$$...$$`, `\(...\)`, `\[...\]` ou comandos soltos como `\frac` / `\sqrt`. Na hora de refazer a lista (busca “Ver” e prévia no “Editar gabarito”) e ao refazer questões, o trecho marcado é renderizado com KaTeX. Sem marcação, a resposta continua aparecendo como texto normal.
+- Prévia em tempo real no “Editar gabarito”: a fórmula aparece logo abaixo do campo enquanto você digita.
+
+### Alterado
+- Campos de resposta aceitam textos maiores (até 500 caracteres, antes 200). O cadastro rápido e o campo de gabarito não confundem mais o `;` de comandos LaTeX como `\;` com o separador de respostas.
+- KaTeX é carregado sob demanda e pré-cacheado pelo Service Worker (CSS, JS e fontes), então a formatação funciona offline depois da primeira visita. Sem a biblioteca disponível, o texto simples continua visível.
+
+### Arquivos
+`index.html`, `js/math.js`, `js/logic.js`, `js/modals.js`, `sw.js`, `css/styles.css`, `README.md`.
+
+---
 ## [v29] — Tema escuro por padrão
 
 ### Alterado

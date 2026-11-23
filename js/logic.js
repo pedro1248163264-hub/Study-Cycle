@@ -269,17 +269,26 @@
     return { keys: keys.sort(compareKeys), invalid: Array.from(new Set(invalid)) };
   }
 
+  // Separador de respostas é ";" ou quebra de linha, mas o ";" de comandos
+  // LaTeX como "\;" (espaço fino) precisa sobreviver. Troca por um marcador
+  // antes de dividir e devolve o comando intacto em cada bloco.
+  const SEMI_MARK = '\u0001';
+  function splitAnswerChunks(text) {
+    return String(text || '').replace(/\\;/g, SEMI_MARK).split(/[;\n]+/)
+      .map((chunk) => chunk.split(SEMI_MARK).join('\\;'));
+  }
+
   // Cadastro rápido com gabarito: "1-5; 7; 9a-c; 1a: 3; 2c: 14; 6: ; 8a".
   // Cada bloco vai até ";" ou quebra de linha; "N: texto" é a resposta, e
   // "N;" / "N: ;" (sem texto) cadastra o exercício sem gabarito.
   function parseExerciseEntries(text, max) {
     const byKey = new Map();
     const invalid = [];
-    String(text || '').split(/[;\n]+/).forEach((chunk) => {
+    splitAnswerChunks(text).forEach((chunk) => {
       if (!chunk.trim()) return;
       const sep = /[:=]/.exec(chunk);
       const left = sep ? chunk.slice(0, sep.index) : chunk;
-      const answer = sep ? chunk.slice(sep.index + 1).trim().slice(0, 200) : '';
+      const answer = sep ? chunk.slice(sep.index + 1).trim().slice(0, 500) : '';
       const r = parseExerciseKeys(left, max);
       r.invalid.forEach((x) => invalid.push(x));
       if (!r.keys.length) {
@@ -531,13 +540,13 @@
   // Lê "1: C; 2: 42; 3a: Falso; 3b: 0,5" (separador ";" ou quebra de linha).
   function parseAnswers(text, max) {
     const answers = {}, invalid = [];
-    String(text || '').split(/[;\n]+/).forEach((chunk) => {
+    splitAnswerChunks(text).forEach((chunk) => {
       if (!chunk.trim()) return;
       const m = /^\s*(\d+)\s*[.)\-]?\s*([a-zA-Z])?\s*[:=]\s*([\s\S]*)$/.exec(chunk);
       if (!m) { invalid.push(chunk.trim().slice(0, 20)); return; }
       const n = parseInt(m[1], 10);
       if (n < 1 || (max && n > max)) { invalid.push(m[1] + (m[2] || '')); return; }
-      const val = m[3].trim().slice(0, 200);
+      const val = m[3].trim().slice(0, 500);
       if (val) answers[n + (m[2] ? m[2].toLowerCase() : '')] = val;
     });
     return { answers, invalid };
